@@ -2,8 +2,6 @@
 
 > **Stateful agent memory architecture** — Multi-Tenant Conversational AI with 3-layer persistent memory.
 
-**Portfolio tagline:** *Not just chat — intelligent memory.*
-
 ---
 
 ## Architecture
@@ -203,11 +201,3 @@ Every database query is scoped by `tenant_id`. All tables include a `tenant_id` 
 No cross-tenant data leakage is possible at the query level.
 
 ---
-
-## CV / Portfolio
-
-**GitHub repo:** `memorymesh`
-
-> MemoryMesh — Multi-Tenant Conversational AI with Stateful Agent Memory Architecture.
-> FastAPI · LangChain · PostgreSQL (pgvector) · Redis · React · OpenRouter.
-> 3-layer memory hierarchy: Redis session cache, pgvector semantic recall, and cost-optimised compression via Claude Haiku. Multi-tenant isolation via row-level tenant_id scoping.
