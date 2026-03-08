@@ -4,9 +4,11 @@
 
 ---
 
-## Architecture
+## Architecture Deep Dive
 
-```
+MemoryMesh solves the "context window problem" for long-running AI agents by utilizing a **3-Layer Stateful Memory Architecture**. Instead of naively sending the entire conversation history to the LLM (which is slow and extremely expensive), or randomly chunking vectors (which loses conversational flow), MemoryMesh intelligently stages context.
+
+```text
                          MemoryMesh Memory Architecture
                          ================================
 
@@ -18,33 +20,41 @@
   │                                                          │
   │   Layer 1: Redis (Short-term Hot Cache)                  │
   │   ┌─────────────────────────────────────────┐           │
-  │   │  Key: session:{tenant_id}:{conv_id}     │           │
-  │   │  Value: last 20 messages (JSON)          │           │
-  │   │  TTL: 2 hours                            │           │
-  │   │  Cache miss → hydrate from PostgreSQL    │           │
+  │   │  Purpose: Instant conversational flow    │           │
+  │   │  Storage: Last 20 messages (JSON)        │           │
+  │   │  Speed: < 2ms latency                    │           │
   │   └─────────────────────────────────────────┘           │
   │                         │                                │
   │   Layer 2: PostgreSQL + pgvector (Semantic Recall)       │
   │   ┌─────────────────────────────────────────┐           │
-  │   │  Cosine similarity search on embeddings  │           │
-  │   │  Top-5 semantically relevant messages    │           │
-  │   │  Filter: tenant_id + conversation_id     │           │
-  │   │  Model: text-embedding-3-small           │           │
+  │   │  Purpose: Long-term topical recall       │           │
+  │   │  Storage: Top-5 semantically relevant    │           │
+  │   │  Method: Cosine similarity on embeddings │           │
   │   └─────────────────────────────────────────┘           │
   │                         │                                │
   │   Layer 3: Memory Compression (Claude Haiku)             │
   │   ┌─────────────────────────────────────────┐           │
+  │   │  Purpose: Mitigate token bloat           │           │
   │   │  Trigger: conversation > 4000 tokens     │           │
-  │   │  Summarise oldest 50% of messages        │           │
-  │   │  Store in conversations.summary          │           │
-  │   │  Delete compressed messages from DB      │           │
-  │   │  Model: anthropic/claude-haiku-4         │           │
+  │   │  Action: Summarise oldest 50% of history │           │
   │   └─────────────────────────────────────────┘           │
   └─────────────────────────────────────────────────────────┘
        │
        ▼
-  Assembled context → Claude Sonnet 4 (via OpenRouter) → SSE stream
+  [ Summary + Top 5 Semantic + Last 20 Recent + User Msg ]
+       │
+       ▼
+  FastAPI Server-Sent Events (SSE) Stream -> React Frontend
 ```
+
+### The 3 Layers Explained
+
+1. **Layer 1: Redis Hot Cache**
+   Every time a user sends a message, the last 20 messages of the conversation are pulled from a Redis cache. This provides the LLM with the immediate, exact back-and-forth context of what is currently being discussed, without needing to hit the primary disk database.
+2. **Layer 2: pgvector Semantic Recall**
+   The incoming user message is passed to `text-embedding-3-small` to generate an embedding. MemoryMesh runs a `pgvector` cosine similarity search across *all* past messages in the database. The top 5 most conceptually relevant past messages (e.g., something discussed 3 weeks ago) are injected into the prompt.
+3. **Layer 3: Asynchronous Compression**
+   Once a conversation crosses 4,000 total tokens, the backend triggers an asynchronous task. It takes the oldest 50% of the conversation and asks `claude-haiku-4` to generate a dense, factual summary. The original older messages are permanently deleted to save space, and the summary is prepended to the system prompt moving forward.
 
 ---
 

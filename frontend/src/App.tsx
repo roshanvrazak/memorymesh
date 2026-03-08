@@ -43,34 +43,55 @@ export default function App() {
       flexDirection: 'column',
       height: '100vh',
       background: 'var(--bg-primary)',
+      /* subtle radial background for a premium feel */
+      backgroundImage: 'radial-gradient(circle at top right, rgba(0, 229, 255, 0.05), transparent 400px), radial-gradient(circle at bottom left, rgba(185, 0, 255, 0.03), transparent 400px)',
     }}>
       {/* Header */}
-      <header style={{
-        height: '52px',
-        borderBottom: '1px solid var(--border)',
-        background: 'var(--bg-secondary)',
+      <header className="glass-panel" style={{
+        height: '60px',
         display: 'flex',
         alignItems: 'center',
-        padding: '0 16px',
+        padding: '0 24px',
         gap: '12px',
         flexShrink: 0,
+        borderBottom: '1px solid var(--border-glass)',
+        borderLeft: 'none',
+        borderRight: 'none',
+        borderTop: 'none',
+        zIndex: 10,
+        position: 'relative',
       }}>
-        <span style={{ fontSize: '20px' }}>🧠</span>
-        <span style={{ fontWeight: 700, fontSize: '16px', letterSpacing: '-0.3px' }}>MemoryMesh</span>
+        <div style={{
+          width: '32px',
+          height: '32px',
+          borderRadius: '8px',
+          background: 'linear-gradient(135deg, var(--accent), var(--accent-purple))',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 0 20px var(--accent-glow)',
+        }}>
+          <span style={{ fontSize: '18px' }}>🧠</span>
+        </div>
+        <span style={{ fontWeight: 700, fontSize: '18px', letterSpacing: '-0.5px' }}>
+          Memory<span className="gradient-text">Mesh</span>
+        </span>
         <span style={{
           fontSize: '11px',
-          background: 'var(--accent)22',
-          color: 'var(--accent)',
-          border: '1px solid var(--accent)44',
-          borderRadius: '8px',
-          padding: '2px 8px',
+          background: 'var(--bg-tertiary)',
+          color: 'var(--text-secondary)',
+          border: '1px solid var(--border)',
+          borderRadius: '12px',
+          padding: '2px 10px',
+          fontWeight: 500,
+          marginLeft: '4px',
         }}>
-          3-layer memory
+          3-Layer Architecture
         </span>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
           {user && (
-            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+            <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 500 }}>
               {user.username}
             </span>
           )}
@@ -82,7 +103,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main */}
+      {/* Main Container */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <Sidebar
           tenantId={tenantId}

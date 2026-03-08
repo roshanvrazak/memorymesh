@@ -64,7 +64,7 @@ export function useChat(tenantId: string, userId: string) {
       if (debugHeader) {
         try {
           setState(prev => ({ ...prev, memoryDebug: JSON.parse(debugHeader) }))
-        } catch {}
+        } catch { }
       }
 
       const reader = response.body!.getReader()
@@ -85,6 +85,8 @@ export function useChat(tenantId: string, userId: string) {
 
       let buffer = ''
 
+      let finalConvId = null;
+
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -99,10 +101,12 @@ export function useChat(tenantId: string, userId: string) {
               const data = JSON.parse(line.slice(6))
 
               if (data.type === 'conversation_id') {
-                convId = data.conversation_id
-                if (data.debug) {
-                  setState(prev => ({ ...prev, memoryDebug: data.debug }))
-                }
+                finalConvId = data.conversation_id;
+                setState(prev => ({
+                  ...prev,
+                  conversationId: data.conversation_id,
+                  memoryDebug: data.debug || prev.memoryDebug
+                }))
               } else if (data.type === 'token') {
                 assistantContent += data.content
                 setState(prev => ({
@@ -112,7 +116,10 @@ export function useChat(tenantId: string, userId: string) {
                   )
                 }))
               } else if (data.type === 'done') {
-                convId = data.conversation_id || convId
+                if (data.conversation_id) {
+                  finalConvId = data.conversation_id;
+                  setState(prev => ({ ...prev, conversationId: data.conversation_id }))
+                }
               } else if (data.type === 'error') {
                 throw new Error(data.error)
               }
@@ -126,7 +133,7 @@ export function useChat(tenantId: string, userId: string) {
       setState(prev => ({
         ...prev,
         isStreaming: false,
-        conversationId: convId || prev.conversationId,
+        conversationId: finalConvId || prev.conversationId,
       }))
     } catch (err: any) {
       if (err.name !== 'AbortError') {

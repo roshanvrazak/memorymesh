@@ -129,6 +129,39 @@ async def chat(
             await memory_manager.save_message(
                 db, conversation.id, tenant_id, "assistant", full_response
             )
+            
+            # If this is a new conversation (we know because we just created it or it has the default title)
+            if not request.conversation_id and conversation.title == "New Conversation":
+                from fastapi import BackgroundTasks
+                import asyncio
+                
+                async def generate_and_update_title(conv_id, first_message):
+                    try:
+                        title_prompt = f"Write a very short, concise title (max 4-5 words) summarizing this message. Do not use quotes or punctuation: {first_message}"
+                        title_response = await openai_client.chat.completions.create(
+                            model=settings.CHAT_MODEL,
+                            messages=[{"role": "user", "content": title_prompt}],
+                            max_tokens=15,
+                        )
+                        new_title = title_response.choices[0].message.content.strip(' ".\n')
+                        
+                        # We need a new session since the request session is closed
+                        from app.database import async_session_maker
+                        async with async_session_maker() as bg_db:
+                            from sqlalchemy import update
+                            await bg_db.execute(
+                                update(Conversation)
+                                .where(Conversation.id == conv_id)
+                                .values(title=new_title)
+                            )
+                            await bg_db.commit()
+                    except Exception as e:
+                        import logging
+                        logging.error(f"Failed to auto-generate title: {e}")
+
+                # Create task and run it in background without blocking SSE
+                asyncio.create_task(generate_and_update_title(conversation.id, request.message))
+
             yield f"data: {json.dumps({'type': 'done', 'conversation_id': str(conversation.id)})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
