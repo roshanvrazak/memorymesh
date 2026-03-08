@@ -1,0 +1,213 @@
+# MemoryMesh
+
+> **Stateful agent memory architecture** — Multi-Tenant Conversational AI with 3-layer persistent memory.
+
+**Portfolio tagline:** *Not just chat — intelligent memory.*
+
+---
+
+## Architecture
+
+```
+                         MemoryMesh Memory Architecture
+                         ================================
+
+  User Message
+       │
+       ▼
+  ┌─────────────────────────────────────────────────────────┐
+  │                     MemoryManager                        │
+  │                                                          │
+  │   Layer 1: Redis (Short-term Hot Cache)                  │
+  │   ┌─────────────────────────────────────────┐           │
+  │   │  Key: session:{tenant_id}:{conv_id}     │           │
+  │   │  Value: last 20 messages (JSON)          │           │
+  │   │  TTL: 2 hours                            │           │
+  │   │  Cache miss → hydrate from PostgreSQL    │           │
+  │   └─────────────────────────────────────────┘           │
+  │                         │                                │
+  │   Layer 2: PostgreSQL + pgvector (Semantic Recall)       │
+  │   ┌─────────────────────────────────────────┐           │
+  │   │  Cosine similarity search on embeddings  │           │
+  │   │  Top-5 semantically relevant messages    │           │
+  │   │  Filter: tenant_id + conversation_id     │           │
+  │   │  Model: text-embedding-3-small           │           │
+  │   └─────────────────────────────────────────┘           │
+  │                         │                                │
+  │   Layer 3: Memory Compression (Claude Haiku)             │
+  │   ┌─────────────────────────────────────────┐           │
+  │   │  Trigger: conversation > 4000 tokens     │           │
+  │   │  Summarise oldest 50% of messages        │           │
+  │   │  Store in conversations.summary          │           │
+  │   │  Delete compressed messages from DB      │           │
+  │   │  Model: anthropic/claude-haiku-4         │           │
+  │   └─────────────────────────────────────────┘           │
+  └─────────────────────────────────────────────────────────┘
+       │
+       ▼
+  Assembled context → Claude Sonnet 4 (via OpenRouter) → SSE stream
+```
+
+---
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | FastAPI + LangChain |
+| Database | PostgreSQL 16 + pgvector |
+| Cache | Redis 7 (AOF persistence) |
+| AI API | OpenRouter (OpenAI-compatible) |
+| Chat model | `anthropic/claude-sonnet-4` |
+| Compression | `anthropic/claude-haiku-4` |
+| Frontend | React 18 + TypeScript + Vite |
+| Infrastructure | Docker Compose |
+
+---
+
+## Quick Start
+
+### 1. Clone and configure
+
+```bash
+git clone https://github.com/roshanvrazak/memorymesh
+cd memorymesh
+cp .env.example .env
+# Add your OPENROUTER_API_KEY to .env
+```
+
+### 2. Start all services
+
+```bash
+docker compose up --build
+```
+
+### 3. Verify
+
+```bash
+curl http://localhost:8000/health
+# {"status": "ok"}
+```
+
+Frontend: http://localhost:3000
+
+---
+
+## API Reference
+
+### Health check
+
+```bash
+curl http://localhost:8000/health
+```
+
+### Create a tenant
+
+```bash
+curl -X POST http://localhost:8000/api/tenants \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Acme Corp"}'
+# Returns: {"id": "<tenant-id>", "name": "Acme Corp", "created_at": "..."}
+```
+
+### Create a user
+
+```bash
+curl -X POST http://localhost:8000/api/tenants/<tenant-id>/users \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice"}'
+# Returns: {"id": "<user-id>", "tenant_id": "<tenant-id>", "username": "alice", ...}
+```
+
+### Send a chat message (streaming SSE)
+
+```bash
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: <tenant-id>" \
+  -H "X-User-ID: <user-id>" \
+  -d '{"message": "What is the capital of France?"}' \
+  --no-buffer
+# Streams: data: {"type":"token","content":"Paris"} ...
+```
+
+### Continue an existing conversation
+
+```bash
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: <tenant-id>" \
+  -H "X-User-ID: <user-id>" \
+  -d '{"message": "Tell me more.", "conversation_id": "<conv-id>"}'
+```
+
+### List conversations
+
+```bash
+curl http://localhost:8000/api/conversations \
+  -H "X-Tenant-ID: <tenant-id>" \
+  -H "X-User-ID: <user-id>"
+```
+
+### Get a conversation with full history
+
+```bash
+curl http://localhost:8000/api/conversations/<conv-id> \
+  -H "X-Tenant-ID: <tenant-id>" \
+  -H "X-User-ID: <user-id>"
+```
+
+### Memory debug — see what each layer holds
+
+```bash
+curl http://localhost:8000/api/conversations/<conv-id>/memory-debug \
+  -H "X-Tenant-ID: <tenant-id>" \
+  -H "X-User-ID: <user-id>"
+# Returns: {"redis_hit": true, "redis_messages": 8, "semantic_messages": 3, "summary_active": false, ...}
+```
+
+### Delete a conversation
+
+```bash
+curl -X DELETE http://localhost:8000/api/conversations/<conv-id> \
+  -H "X-Tenant-ID: <tenant-id>" \
+  -H "X-User-ID: <user-id>"
+```
+
+---
+
+## How Memory Compression Works
+
+When a conversation exceeds **4,000 tokens**:
+
+1. The oldest 50% of messages are selected
+2. `anthropic/claude-haiku-4` (via OpenRouter) generates a concise factual summary
+3. The summary is stored in `conversations.summary`
+4. The original compressed messages are **deleted** from the database
+5. The Redis cache is invalidated so the next request re-hydrates from the updated database
+6. Future context assembly injects the summary at the top of the system prompt
+
+This approach dramatically reduces token costs while preserving all important context.
+
+---
+
+## Multi-Tenancy
+
+Every database query is scoped by `tenant_id`. All tables include a `tenant_id` foreign key:
+
+- `tenants` → root isolation boundary
+- `users` → belong to one tenant
+- `conversations` → scoped by both `user_id` and `tenant_id`
+- `messages` → scoped by both `conversation_id` and `tenant_id`
+
+No cross-tenant data leakage is possible at the query level.
+
+---
+
+## CV / Portfolio
+
+**GitHub repo:** `memorymesh`
+
+> MemoryMesh — Multi-Tenant Conversational AI with Stateful Agent Memory Architecture.
+> FastAPI · LangChain · PostgreSQL (pgvector) · Redis · React · OpenRouter.
+> 3-layer memory hierarchy: Redis session cache, pgvector semantic recall, and cost-optimised compression via Claude Haiku. Multi-tenant isolation via row-level tenant_id scoping.
