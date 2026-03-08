@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
-from typing import List
+from pydantic import field_validator
+from typing import List, Union
 
 
 class Settings(BaseSettings):
@@ -19,6 +20,17 @@ class Settings(BaseSettings):
     REDIS_MAX_MESSAGES: int = 20
     TOKEN_COMPRESSION_THRESHOLD: int = 4000
     SEMANTIC_TOP_K: int = 5
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: Union[str, list]) -> list:
+        if isinstance(v, list):
+            return v
+        v = v.strip()
+        if v.startswith("["):
+            import json
+            return json.loads(v)
+        return [origin.strip() for origin in v.split(",") if origin.strip()]
 
     class Config:
         env_file = ".env"
