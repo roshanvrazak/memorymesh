@@ -1,10 +1,12 @@
 import uuid
 import json
-from typing import Optional, AsyncIterator
+from typing import AsyncIterator
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from app.database import get_db
 from app.schemas.chat import ChatRequest
@@ -12,6 +14,37 @@ from app.models.db import Tenant, User, Conversation
 from app.memory.manager import memory_manager
 from app.config import settings
 from openai import AsyncOpenAI
+
+_LC_ROLE_MAP = {SystemMessage: "system", HumanMessage: "user", AIMessage: "assistant"}
+
+
+def build_prompt(system_prompt: str, history: list, user_input: str) -> list[dict]:
+    """Build OpenAI-compatible messages using LangChain ChatPromptTemplate.
+
+    Injects all 3 memory layers (summary + semantic context already embedded in
+    system_prompt by the caller) and formats conversation history via
+    MessagesPlaceholder before appending the current user turn.
+    """
+    lc_history: list[BaseMessage] = []
+    for msg in history:
+        if msg["role"] == "user":
+            lc_history.append(HumanMessage(content=msg["content"]))
+        else:
+            lc_history.append(AIMessage(content=msg["content"]))
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "{system_prompt}"),
+        MessagesPlaceholder(variable_name="history"),
+        ("human", "{input}"),
+    ])
+
+    formatted = prompt.format_messages(
+        system_prompt=system_prompt,
+        history=lc_history,
+        input=user_input,
+    )
+
+    return [{"role": _LC_ROLE_MAP[type(m)], "content": m.content} for m in formatted]
 
 router = APIRouter()
 
@@ -85,21 +118,18 @@ async def chat(
     # Get memory context
     context = await memory_manager.get_context(db, tenant_id, conversation.id, request.message)
 
-    # Build messages for LLM
+    # Build system prompt — inject all 3 memory layers
     system_prompt = "You are a helpful AI assistant with access to conversation history."
     if context["summary"]:
         system_prompt += f"\n\nConversation summary (previous context):\n{context['summary']}"
-
     if context["semantic_context"]:
         semantic_text = "\n".join(
             [f"{m['role']}: {m['content']}" for m in context["semantic_context"]]
         )
-        system_prompt += f"\n\nSemanticly relevant past messages:\n{semantic_text}"
+        system_prompt += f"\n\nSemantically relevant past messages:\n{semantic_text}"
 
-    messages = [{"role": "system", "content": system_prompt}]
-    for msg in context["recent_messages"]:
-        messages.append({"role": msg["role"], "content": msg["content"]})
-    messages.append({"role": "user", "content": request.message})
+    # Build OpenAI-compatible message list via LangChain ChatPromptTemplate
+    messages = build_prompt(system_prompt, context["recent_messages"], request.message)
 
     # Save user message
     await memory_manager.save_message(db, conversation.id, tenant_id, "user", request.message)
@@ -146,8 +176,8 @@ async def chat(
                         new_title = title_response.choices[0].message.content.strip(' ".\n')
                         
                         # We need a new session since the request session is closed
-                        from app.database import async_session_maker
-                        async with async_session_maker() as bg_db:
+                        from app.database import AsyncSessionLocal
+                        async with AsyncSessionLocal() as bg_db:
                             from sqlalchemy import update
                             await bg_db.execute(
                                 update(Conversation)

@@ -25,17 +25,16 @@ export default function App() {
 
   const handleSend = useCallback((content: string) => {
     sendMessage(content, state.conversationId || undefined)
-    // Refresh sidebar after sending to show new conversation
     setTimeout(() => setSidebarRefresh(n => n + 1), 1000)
   }, [sendMessage, state.conversationId])
 
-  const handleNew = () => {
-    newConversation()
-  }
+  const handleNew = () => newConversation()
 
   const handleSelectConversation = (conversationId: string, messages: Message[]) => {
     loadConversation(conversationId, messages)
   }
+
+  const isConnected = Boolean(tenantId && userId)
 
   return (
     <div style={{
@@ -43,57 +42,118 @@ export default function App() {
       flexDirection: 'column',
       height: '100vh',
       background: 'var(--bg-primary)',
-      /* subtle radial background for a premium feel */
-      backgroundImage: 'radial-gradient(circle at top right, rgba(0, 229, 255, 0.05), transparent 400px), radial-gradient(circle at bottom left, rgba(185, 0, 255, 0.03), transparent 400px)',
+      backgroundImage: [
+        'radial-gradient(ellipse 80% 60% at 70% -10%, rgba(0, 229, 255, 0.04), transparent)',
+        'radial-gradient(ellipse 60% 60% at -10% 80%, rgba(168, 85, 247, 0.03), transparent)',
+      ].join(', '),
     }}>
       {/* Header */}
-      <header className="glass-panel" style={{
-        height: '60px',
+      <header style={{
+        height: '56px',
         display: 'flex',
         alignItems: 'center',
-        padding: '0 24px',
-        gap: '12px',
+        padding: '0 20px',
+        gap: '10px',
         flexShrink: 0,
         borderBottom: '1px solid var(--border-glass)',
-        borderLeft: 'none',
-        borderRight: 'none',
-        borderTop: 'none',
+        background: 'rgba(8, 8, 8, 0.85)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
         zIndex: 10,
         position: 'relative',
       }}>
+        {/* Logo */}
         <div style={{
-          width: '32px',
-          height: '32px',
+          width: '30px',
+          height: '30px',
           borderRadius: '8px',
-          background: 'linear-gradient(135deg, var(--accent), var(--accent-purple))',
+          background: 'linear-gradient(135deg, rgba(0,229,255,0.9), rgba(168,85,247,0.9))',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '0 0 20px var(--accent-glow)',
+          boxShadow: '0 0 16px rgba(0,229,255,0.2)',
+          flexShrink: 0,
         }}>
-          <span style={{ fontSize: '18px' }}>🧠</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="rgba(0,0,0,0.3)"/>
+            <path d="M12 6v6l4 2" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+            <circle cx="12" cy="12" r="2" fill="white"/>
+          </svg>
         </div>
-        <span style={{ fontWeight: 700, fontSize: '18px', letterSpacing: '-0.5px' }}>
-          Memory<span className="gradient-text">Mesh</span>
-        </span>
-        <span style={{
-          fontSize: '11px',
-          background: 'var(--bg-tertiary)',
-          color: 'var(--text-secondary)',
-          border: '1px solid var(--border)',
-          borderRadius: '12px',
-          padding: '2px 10px',
-          fontWeight: 500,
-          marginLeft: '4px',
-        }}>
-          3-Layer Architecture
-        </span>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+          <span style={{ fontWeight: 700, fontSize: '16px', letterSpacing: '-0.4px', color: 'var(--text-primary)' }}>
+            Memory<span className="gradient-text">Mesh</span>
+          </span>
+          <span style={{
+            fontSize: '10px',
+            background: 'rgba(0,229,255,0.08)',
+            color: 'var(--accent)',
+            border: '1px solid rgba(0,229,255,0.2)',
+            borderRadius: '20px',
+            padding: '2px 8px',
+            fontWeight: 600,
+            letterSpacing: '0.3px',
+            textTransform: 'uppercase',
+          }}>
+            3-Layer Memory
+          </span>
+        </div>
+
+        {/* Status indicator */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          marginLeft: '8px',
+          padding: '4px 10px',
+          borderRadius: '20px',
+          background: isConnected ? 'rgba(34,197,94,0.08)' : 'rgba(74,74,74,0.15)',
+          border: `1px solid ${isConnected ? 'rgba(34,197,94,0.2)' : 'var(--border-subtle)'}`,
+          transition: 'all 0.4s ease',
+        }}>
+          <div className={`status-dot ${isConnected ? '' : 'inactive'}`} />
+          <span style={{
+            fontSize: '11px',
+            fontWeight: 600,
+            color: isConnected ? 'var(--accent-green)' : 'var(--text-muted)',
+            letterSpacing: '0.3px',
+          }}>
+            {isConnected ? 'Connected' : 'Not connected'}
+          </span>
+        </div>
+
+        {/* Right side */}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
           {user && (
-            <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 500 }}>
-              {user.username}
-            </span>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '5px 10px',
+              borderRadius: 'var(--r-md)',
+              background: 'var(--bg-tertiary)',
+              border: '1px solid var(--border-subtle)',
+            }}>
+              <div style={{
+                width: '20px',
+                height: '20px',
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, var(--accent), var(--accent-purple))',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '10px',
+                fontWeight: 700,
+                color: '#000',
+                flexShrink: 0,
+              }}>
+                {user.username[0]?.toUpperCase()}
+              </div>
+              <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                {user.username}
+              </span>
+            </div>
           )}
           <TenantSwitcher
             currentTenant={tenant}
@@ -103,7 +163,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Container */}
+      {/* Main */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <Sidebar
           tenantId={tenantId}
