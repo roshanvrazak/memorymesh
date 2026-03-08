@@ -82,7 +82,11 @@ class PGMemoryLayer:
                 m.created_at = row.created_at
                 messages.append(m)
             return messages
-        except Exception:
+        except Exception as e:
+            # We must rollback so the session can be reused for subsequent queries
+            import logging
+            logging.error(f"Semantic search failed: {e}")
+            await db.rollback()
             return []
 
     async def get_total_token_count(
