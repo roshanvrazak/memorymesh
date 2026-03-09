@@ -4,10 +4,10 @@ from typing import List, Union
 
 
 class Settings(BaseSettings):
-    OPENROUTER_API_KEY: str = ""
-    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
-    CHAT_MODEL: str = "anthropic/claude-sonnet-4"
-    COMPRESSION_MODEL: str = "anthropic/claude-haiku-4"
+    ANTHROPIC_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""  # For text-embedding-3-small
+    CHAT_MODEL: str = "claude-sonnet-4-20250514"
+    COMPRESSION_MODEL: str = "claude-haiku-20240307"
 
     DATABASE_URL: str = "postgresql+asyncpg://memorymesh:memorymesh@postgres:5432/memorymesh"
     REDIS_URL: str = "redis://redis:6379"

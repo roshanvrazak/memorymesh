@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
@@ -13,75 +14,43 @@ from app.schemas.chat import ChatRequest
 from app.models.db import Tenant, User, Conversation
 from app.memory.manager import memory_manager
 from app.config import settings
-from openai import AsyncOpenAI
 
-_LC_ROLE_MAP = {SystemMessage: "system", HumanMessage: "user", AIMessage: "assistant"}
+# LangChain ChatAnthropic LLM for chat
+chat_llm = ChatAnthropic(
+    model=settings.CHAT_MODEL,
+    anthropic_api_key=settings.ANTHROPIC_API_KEY,
+    streaming=True,
+)
+
+# Lighter model for title generation
+title_llm = ChatAnthropic(
+    model=settings.CHAT_MODEL,
+    anthropic_api_key=settings.ANTHROPIC_API_KEY,
+    max_tokens=15,
+)
+
+# LangChain prompt template
+chat_prompt = ChatPromptTemplate.from_messages([
+    ("system", "{system_prompt}"),
+    MessagesPlaceholder(variable_name="history"),
+    ("human", "{input}"),
+])
+
+# LangChain chain: prompt | LLM
+chat_chain = chat_prompt | chat_llm
+
+router = APIRouter()
 
 
-def build_prompt(system_prompt: str, history: list, user_input: str) -> list[dict]:
-    """Build OpenAI-compatible messages using LangChain ChatPromptTemplate.
-
-    Injects all 3 memory layers (summary + semantic context already embedded in
-    system_prompt by the caller) and formats conversation history via
-    MessagesPlaceholder before appending the current user turn.
-    """
+def _build_lc_history(history: list) -> list[BaseMessage]:
+    """Convert raw message dicts to LangChain message objects."""
     lc_history: list[BaseMessage] = []
     for msg in history:
         if msg["role"] == "user":
             lc_history.append(HumanMessage(content=msg["content"]))
         else:
             lc_history.append(AIMessage(content=msg["content"]))
-
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", "{system_prompt}"),
-        MessagesPlaceholder(variable_name="history"),
-        ("human", "{input}"),
-    ])
-
-    formatted = prompt.format_messages(
-        system_prompt=system_prompt,
-        history=lc_history,
-        input=user_input,
-    )
-
-    return [{"role": _LC_ROLE_MAP[type(m)], "content": m.content} for m in formatted]
-
-router = APIRouter()
-
-openai_client = AsyncOpenAI(
-    api_key=settings.OPENROUTER_API_KEY,
-    base_url=settings.OPENROUTER_BASE_URL,
-    default_headers={
-        "HTTP-Referer": "http://localhost:3000",
-        "X-Title": "MemoryMesh",
-    },
-)
-
-
-async def get_tenant_and_user(
-    x_tenant_id: str = Header(...),
-    x_user_id: str = Header(...),
-    db: AsyncSession = Depends(get_db),
-):
-    try:
-        tenant_id = uuid.UUID(x_tenant_id)
-        user_id = uuid.UUID(x_user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid tenant_id or user_id")
-
-    tenant = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
-    tenant = tenant.scalar_one_or_none()
-    if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant not found")
-
-    user = await db.execute(
-        select(User).where(User.id == user_id).where(User.tenant_id == tenant_id)
-    )
-    user = user.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    return tenant, user
+    return lc_history
 
 
 @router.post("/chat")
@@ -128,8 +97,8 @@ async def chat(
         )
         system_prompt += f"\n\nSemantically relevant past messages:\n{semantic_text}"
 
-    # Build OpenAI-compatible message list via LangChain ChatPromptTemplate
-    messages = build_prompt(system_prompt, context["recent_messages"], request.message)
+    # Build LangChain history from recent messages
+    lc_history = _build_lc_history(context["recent_messages"])
 
     # Save user message
     await memory_manager.save_message(db, conversation.id, tenant_id, "user", request.message)
@@ -143,39 +112,35 @@ async def chat(
             # Send conversation_id first
             yield f"data: {json.dumps({'type': 'conversation_id', 'conversation_id': str(conversation.id), 'debug': debug_info})}\n\n"
 
-            stream = await openai_client.chat.completions.create(
-                model=settings.CHAT_MODEL,
-                messages=messages,
-                stream=True,
-            )
-
-            async for chunk in stream:
-                delta = chunk.choices[0].delta
-                if delta.content:
-                    full_response += delta.content
-                    yield f"data: {json.dumps({'type': 'token', 'content': delta.content})}\n\n"
+            # Stream via LangChain chain.astream()
+            async for chunk in chat_chain.astream({
+                "system_prompt": system_prompt,
+                "history": lc_history,
+                "input": request.message,
+            }):
+                token = chunk.content if hasattr(chunk, "content") else str(chunk)
+                if token:
+                    full_response += token
+                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
 
             # Save assistant response
             await memory_manager.save_message(
                 db, conversation.id, tenant_id, "assistant", full_response
             )
-            
-            # If this is a new conversation (we know because we just created it or it has the default title)
+
+            # Auto-generate title for new conversations
             if not request.conversation_id and conversation.title == "New Conversation":
-                from fastapi import BackgroundTasks
                 import asyncio
-                
+
                 async def generate_and_update_title(conv_id, first_message):
                     try:
-                        title_prompt = f"Write a very short, concise title (max 4-5 words) summarizing this message. Do not use quotes or punctuation: {first_message}"
-                        title_response = await openai_client.chat.completions.create(
-                            model=settings.CHAT_MODEL,
-                            messages=[{"role": "user", "content": title_prompt}],
-                            max_tokens=15,
+                        title_prompt = (
+                            f"Write a very short, concise title (max 4-5 words) summarizing "
+                            f"this message. Do not use quotes or punctuation: {first_message}"
                         )
-                        new_title = title_response.choices[0].message.content.strip(' ".\n')
-                        
-                        # We need a new session since the request session is closed
+                        result = await title_llm.ainvoke([HumanMessage(content=title_prompt)])
+                        new_title = result.content.strip(' ".\n')
+
                         from app.database import AsyncSessionLocal
                         async with AsyncSessionLocal() as bg_db:
                             from sqlalchemy import update
@@ -189,7 +154,6 @@ async def chat(
                         import logging
                         logging.error(f"Failed to auto-generate title: {e}")
 
-                # Create task and run it in background without blocking SSE
                 asyncio.create_task(generate_and_update_title(conversation.id, request.message))
 
             yield f"data: {json.dumps({'type': 'done', 'conversation_id': str(conversation.id)})}\n\n"

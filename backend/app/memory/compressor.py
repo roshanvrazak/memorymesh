@@ -3,17 +3,16 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from app.models.db import Message, Conversation
-from openai import AsyncOpenAI
+from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import SystemMessage, HumanMessage
 from app.config import settings
 import tiktoken
 
-openai_client = AsyncOpenAI(
-    api_key=settings.OPENROUTER_API_KEY,
-    base_url=settings.OPENROUTER_BASE_URL,
-    default_headers={
-        "HTTP-Referer": "http://localhost:3000",
-        "X-Title": "MemoryMesh",
-    },
+# LangChain ChatAnthropic for Haiku compression
+compression_llm = ChatAnthropic(
+    model=settings.COMPRESSION_MODEL,
+    anthropic_api_key=settings.ANTHROPIC_API_KEY,
+    max_tokens=500,
 )
 
 
@@ -62,27 +61,17 @@ class MemoryCompressor:
         conv_text = "\n".join([f"{m.role}: {m.content}" for m in to_compress])
         compressed_tokens = sum(m.token_count or count_tokens(m.content) for m in to_compress)
 
-        # Call Claude Haiku via OpenRouter
-        response = await openai_client.chat.completions.create(
-            model=settings.COMPRESSION_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a memory compressor. Summarise the following conversation into a "
-                        "concise, factual summary that preserves all important context, decisions, "
-                        "and information. Be thorough but concise."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": f"Summarise this conversation:\n\n{conv_text}",
-                },
-            ],
-            max_tokens=500,
-        )
+        # Call Claude Haiku via LangChain ChatAnthropic
+        result = await compression_llm.ainvoke([
+            SystemMessage(content=(
+                "You are a memory compressor. Summarise the following conversation into a "
+                "concise, factual summary that preserves all important context, decisions, "
+                "and information. Be thorough but concise."
+            )),
+            HumanMessage(content=f"Summarise this conversation:\n\n{conv_text}"),
+        ])
 
-        summary = response.choices[0].message.content
+        summary = result.content
 
         # Update conversation summary
         await db.execute(

@@ -3,26 +3,19 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from app.models.db import Message, Conversation
-from openai import AsyncOpenAI
+from langchain_openai import OpenAIEmbeddings
 from app.config import settings
 
-openai_client = AsyncOpenAI(
-    api_key=settings.OPENROUTER_API_KEY,
-    base_url=settings.OPENROUTER_BASE_URL,
-    default_headers={
-        "HTTP-Referer": "http://localhost:3000",
-        "X-Title": "MemoryMesh",
-    },
+# LangChain OpenAI embeddings (text-embedding-3-small)
+embeddings_model = OpenAIEmbeddings(
+    model="text-embedding-3-small",
+    openai_api_key=settings.OPENAI_API_KEY,
 )
 
 
 class PGMemoryLayer:
     async def get_embedding(self, text: str) -> List[float]:
-        response = await openai_client.embeddings.create(
-            model="openai/text-embedding-3-small",
-            input=text,
-        )
-        return response.data[0].embedding
+        return await embeddings_model.aembed_query(text)
 
     async def store_message(self, db: AsyncSession, message: Message):
         db.add(message)
