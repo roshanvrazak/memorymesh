@@ -76,3 +76,4 @@ docker-compose.override.yml
 MEMORYMESH_CONTEXT.md
 .claude/
 
+.env
