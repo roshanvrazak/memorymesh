@@ -388,7 +388,7 @@ function EmptyState({ isSetup }: { isSetup: boolean }) {
             { tech: 'PostgreSQL + pgvector', role: 'Vector store' },
             { tech: 'FastAPI', role: 'SSE streaming' },
             { tech: 'LangChain', role: 'Orchestration' },
-            { tech: 'OpenRouter', role: 'LLM gateway' },
+            { tech: 'Anthropic Claude', role: 'LLM provider' },
           ].map(item => (
             <div key={item.tech} style={{
               display: 'flex', alignItems: 'center', gap: '5px',

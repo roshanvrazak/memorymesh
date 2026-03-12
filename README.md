@@ -52,9 +52,9 @@ MemoryMesh solves the "context window problem" for long-running AI agents by uti
 1. **Layer 1: Redis Hot Cache**
    Every time a user sends a message, the last 20 messages of the conversation are pulled from a Redis cache. This provides the LLM with the immediate, exact back-and-forth context of what is currently being discussed, without needing to hit the primary disk database.
 2. **Layer 2: pgvector Semantic Recall**
-   The incoming user message is passed to `text-embedding-3-small` to generate an embedding. MemoryMesh runs a `pgvector` cosine similarity search across *all* past messages in the database. The top 5 most conceptually relevant past messages (e.g., something discussed 3 weeks ago) are injected into the prompt.
+   The incoming user message is passed to `text-embedding-3-small` (via OpenAI) to generate an embedding. MemoryMesh runs a `pgvector` cosine similarity search across *all* past messages in the database. The top 5 most conceptually relevant past messages (e.g., something discussed 3 weeks ago) are injected into the prompt.
 3. **Layer 3: Asynchronous Compression**
-   Once a conversation crosses 4,000 total tokens, the backend triggers an asynchronous task. It takes the oldest 50% of the conversation and asks `claude-haiku-4` to generate a dense, factual summary. The original older messages are permanently deleted to save space, and the summary is prepended to the system prompt moving forward.
+   Once a conversation crosses 4,000 total tokens, the backend triggers an asynchronous task. It takes the oldest 50% of the conversation and asks `claude-haiku-20240307` (via LangChain ChatAnthropic) to generate a dense, factual summary. The original older messages are permanently deleted to save space, and the summary is prepended to the system prompt moving forward.
 
 ---
 
@@ -65,9 +65,9 @@ MemoryMesh solves the "context window problem" for long-running AI agents by uti
 | Backend | FastAPI + LangChain |
 | Database | PostgreSQL 16 + pgvector |
 | Cache | Redis 7 (AOF persistence) |
-| AI API | OpenRouter (OpenAI-compatible) |
-| Chat model | `anthropic/claude-sonnet-4` |
-| Compression | `anthropic/claude-haiku-4` |
+| AI Chat | Anthropic Claude API (`claude-sonnet-4-20250514`) via LangChain |
+| AI Compression | Anthropic Claude API (`claude-haiku-20240307`) via LangChain |
+| Embeddings | OpenAI `text-embedding-3-small` via LangChain |
 | Frontend | React 18 + TypeScript + Vite |
 | Infrastructure | Docker Compose |
 
@@ -81,7 +81,7 @@ MemoryMesh solves the "context window problem" for long-running AI agents by uti
 git clone https://github.com/roshanvrazak/memorymesh
 cd memorymesh
 cp .env.example .env
-# Add your OPENROUTER_API_KEY to .env
+# Add your ANTHROPIC_API_KEY and OPENAI_API_KEY to .env
 ```
 
 ### 2. Start all services
@@ -189,7 +189,7 @@ curl -X DELETE http://localhost:8000/api/conversations/<conv-id> \
 When a conversation exceeds **4,000 tokens**:
 
 1. The oldest 50% of messages are selected
-2. `anthropic/claude-haiku-4` (via OpenRouter) generates a concise factual summary
+2. `claude-haiku-20240307` (via LangChain `ChatAnthropic`) generates a concise factual summary
 3. The summary is stored in `conversations.summary`
 4. The original compressed messages are **deleted** from the database
 5. The Redis cache is invalidated so the next request re-hydrates from the updated database

@@ -21,12 +21,12 @@ export function MemoryDebugPanel({ debug }: Props) {
       ),
       label: 'Redis',
       detail: debug.redis_hit
-        ? `${debug.redis_messages} messages · cache hit`
-        : `${debug.redis_messages} messages · loaded from DB`,
+        ? `Redis hit - ${debug.redis_messages} recent messages`
+        : `${debug.redis_messages} messages - loaded from DB`,
     },
     {
       active: debug.semantic_messages > 0,
-      color: '#00e5ff',
+      color: '#f97316',
       icon: (
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
           <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="2.2"/>
@@ -35,7 +35,7 @@ export function MemoryDebugPanel({ debug }: Props) {
       ),
       label: 'pgvector',
       detail: debug.semantic_messages > 0
-        ? `${debug.semantic_messages} semantic matches`
+        ? `pgvector - ${debug.semantic_messages} semantically relevant messages retrieved`
         : 'no semantic matches',
     },
     {
@@ -47,9 +47,9 @@ export function MemoryDebugPanel({ debug }: Props) {
           <path d="M7 8h10M7 12h7M7 16h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
         </svg>
       ),
-      label: 'Haiku',
+      label: 'Summary',
       detail: debug.summary_active
-        ? `${debug.summary_tokens ?? 0} tokens compressed`
+        ? `Summary active - ${debug.summary_tokens ?? 0} tokens compressed`
         : 'no compression yet',
     },
   ]

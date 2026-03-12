@@ -118,7 +118,19 @@ export function useChat(tenantId: string, userId: string) {
               } else if (data.type === 'done') {
                 if (data.conversation_id) {
                   finalConvId = data.conversation_id;
-                  setState(prev => ({ ...prev, conversationId: data.conversation_id }))
+                  setState(prev => ({
+                    ...prev,
+                    conversationId: data.conversation_id,
+                    messages: prev.messages.map(m => {
+                      if (m.id === assistantMsgId && data.assistant_token_count) {
+                        return { ...m, token_count: data.assistant_token_count }
+                      }
+                      if (m.id === userMsg.id && data.user_token_count) {
+                        return { ...m, token_count: data.user_token_count }
+                      }
+                      return m
+                    }),
+                  }))
                 }
               } else if (data.type === 'error') {
                 throw new Error(data.error)

@@ -13,6 +13,7 @@ from app.database import get_db
 from app.schemas.chat import ChatRequest
 from app.models.db import Tenant, User, Conversation
 from app.memory.manager import memory_manager
+from app.memory.compressor import count_tokens
 from app.config import settings
 
 # LangChain ChatAnthropic LLM for chat
@@ -156,7 +157,9 @@ async def chat(
 
                 asyncio.create_task(generate_and_update_title(conversation.id, request.message))
 
-            yield f"data: {json.dumps({'type': 'done', 'conversation_id': str(conversation.id)})}\n\n"
+            user_tokens = count_tokens(request.message)
+            assistant_tokens = count_tokens(full_response)
+            yield f"data: {json.dumps({'type': 'done', 'conversation_id': str(conversation.id), 'user_token_count': user_tokens, 'assistant_token_count': assistant_tokens})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
 
