@@ -1,20 +1,27 @@
 from typing import List, Dict, Optional
+import logging
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from app.models.db import Message, Conversation
-from langchain_openai import OpenAIEmbeddings
 from app.config import settings
 
-# LangChain OpenAI embeddings (text-embedding-3-small)
-embeddings_model = OpenAIEmbeddings(
-    model="text-embedding-3-small",
-    openai_api_key=settings.OPENAI_API_KEY,
-)
+# Lazy-init: only create embeddings model when an OpenAI key is available
+embeddings_model = None
+if settings.OPENAI_API_KEY:
+    from langchain_openai import OpenAIEmbeddings
+    embeddings_model = OpenAIEmbeddings(
+        model="text-embedding-3-small",
+        openai_api_key=settings.OPENAI_API_KEY,
+    )
+else:
+    logging.warning("OPENAI_API_KEY not set — semantic search (pgvector) disabled")
 
 
 class PGMemoryLayer:
-    async def get_embedding(self, text: str) -> List[float]:
+    async def get_embedding(self, text: str) -> Optional[List[float]]:
+        if embeddings_model is None:
+            return None
         return await embeddings_model.aembed_query(text)
 
     async def store_message(self, db: AsyncSession, message: Message):
@@ -45,6 +52,8 @@ class PGMemoryLayer:
     ) -> List[Message]:
         try:
             embedding = await self.get_embedding(query)
+            if embedding is None:
+                return []
             embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
             result = await db.execute(
                 text("""
@@ -77,7 +86,6 @@ class PGMemoryLayer:
             return messages
         except Exception as e:
             # We must rollback so the session can be reused for subsequent queries
-            import logging
             logging.error(f"Semantic search failed: {e}")
             await db.rollback()
             return []
