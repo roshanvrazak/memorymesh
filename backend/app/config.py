@@ -6,6 +6,7 @@ from typing import List, Union
 class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     OPENAI_API_KEY: str = ""  # For text-embedding-3-small
+    OPENROUTER_API_KEY: str = ""  # Alternative: embeddings via OpenRouter
     CHAT_MODEL: str = "claude-sonnet-4-20250514"
     COMPRESSION_MODEL: str = "claude-haiku-20240307"
 

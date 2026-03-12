@@ -3,15 +3,16 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from app.models.db import Message, Conversation
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.config import settings
 import tiktoken
 
-# LangChain ChatAnthropic for Haiku compression
-compression_llm = ChatAnthropic(
+# LangChain ChatOpenAI via OpenRouter for compression
+compression_llm = ChatOpenAI(
     model=settings.COMPRESSION_MODEL,
-    anthropic_api_key=settings.ANTHROPIC_API_KEY,
+    openai_api_key=settings.OPENROUTER_API_KEY,
+    openai_api_base="https://openrouter.ai/api/v1",
     max_tokens=500,
 )
 

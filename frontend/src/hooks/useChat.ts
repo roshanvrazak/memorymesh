@@ -97,46 +97,47 @@ export function useChat(tenantId: string, userId: string) {
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
+            let data: any
             try {
-              const data = JSON.parse(line.slice(6))
+              data = JSON.parse(line.slice(6))
+            } catch {
+              continue // skip malformed JSON lines
+            }
 
-              if (data.type === 'conversation_id') {
+            if (data.type === 'conversation_id') {
+              finalConvId = data.conversation_id;
+              setState(prev => ({
+                ...prev,
+                conversationId: data.conversation_id,
+                memoryDebug: data.debug || prev.memoryDebug
+              }))
+            } else if (data.type === 'token') {
+              assistantContent += data.content
+              setState(prev => ({
+                ...prev,
+                messages: prev.messages.map(m =>
+                  m.id === assistantMsgId ? { ...m, content: assistantContent } : m
+                )
+              }))
+            } else if (data.type === 'done') {
+              if (data.conversation_id) {
                 finalConvId = data.conversation_id;
                 setState(prev => ({
                   ...prev,
                   conversationId: data.conversation_id,
-                  memoryDebug: data.debug || prev.memoryDebug
+                  messages: prev.messages.map(m => {
+                    if (m.id === assistantMsgId && data.assistant_token_count) {
+                      return { ...m, token_count: data.assistant_token_count }
+                    }
+                    if (m.id === userMsg.id && data.user_token_count) {
+                      return { ...m, token_count: data.user_token_count }
+                    }
+                    return m
+                  }),
                 }))
-              } else if (data.type === 'token') {
-                assistantContent += data.content
-                setState(prev => ({
-                  ...prev,
-                  messages: prev.messages.map(m =>
-                    m.id === assistantMsgId ? { ...m, content: assistantContent } : m
-                  )
-                }))
-              } else if (data.type === 'done') {
-                if (data.conversation_id) {
-                  finalConvId = data.conversation_id;
-                  setState(prev => ({
-                    ...prev,
-                    conversationId: data.conversation_id,
-                    messages: prev.messages.map(m => {
-                      if (m.id === assistantMsgId && data.assistant_token_count) {
-                        return { ...m, token_count: data.assistant_token_count }
-                      }
-                      if (m.id === userMsg.id && data.user_token_count) {
-                        return { ...m, token_count: data.user_token_count }
-                      }
-                      return m
-                    }),
-                  }))
-                }
-              } else if (data.type === 'error') {
-                throw new Error(data.error)
               }
-            } catch (e) {
-              // ignore parse errors
+            } else if (data.type === 'error') {
+              throw new Error(data.error)
             }
           }
         }

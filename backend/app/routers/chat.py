@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
@@ -16,17 +16,20 @@ from app.memory.manager import memory_manager
 from app.memory.compressor import count_tokens
 from app.config import settings
 
-# LangChain ChatAnthropic LLM for chat
-chat_llm = ChatAnthropic(
+# LangChain ChatOpenAI via OpenRouter
+chat_llm = ChatOpenAI(
     model=settings.CHAT_MODEL,
-    anthropic_api_key=settings.ANTHROPIC_API_KEY,
+    openai_api_key=settings.OPENROUTER_API_KEY,
+    openai_api_base="https://openrouter.ai/api/v1",
     streaming=True,
+    max_tokens=1024,
 )
 
 # Lighter model for title generation
-title_llm = ChatAnthropic(
+title_llm = ChatOpenAI(
     model=settings.CHAT_MODEL,
-    anthropic_api_key=settings.ANTHROPIC_API_KEY,
+    openai_api_key=settings.OPENROUTER_API_KEY,
+    openai_api_base="https://openrouter.ai/api/v1",
     max_tokens=15,
 )
 

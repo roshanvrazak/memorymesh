@@ -6,7 +6,7 @@ from sqlalchemy import select, text
 from app.models.db import Message, Conversation
 from app.config import settings
 
-# Lazy-init: only create embeddings model when an OpenAI key is available
+# Init embeddings: prefer OpenAI key, fall back to OpenRouter
 embeddings_model = None
 if settings.OPENAI_API_KEY:
     from langchain_openai import OpenAIEmbeddings
@@ -14,8 +14,15 @@ if settings.OPENAI_API_KEY:
         model="text-embedding-3-small",
         openai_api_key=settings.OPENAI_API_KEY,
     )
+elif settings.OPENROUTER_API_KEY:
+    from langchain_openai import OpenAIEmbeddings
+    embeddings_model = OpenAIEmbeddings(
+        model="openai/text-embedding-3-small",
+        openai_api_key=settings.OPENROUTER_API_KEY,
+        openai_api_base="https://openrouter.ai/api/v1",
+    )
 else:
-    logging.warning("OPENAI_API_KEY not set — semantic search (pgvector) disabled")
+    logging.warning("No embedding API key set — semantic search (pgvector) disabled")
 
 
 class PGMemoryLayer:
@@ -58,12 +65,12 @@ class PGMemoryLayer:
             result = await db.execute(
                 text("""
                     SELECT id, role, content, token_count, created_at,
-                           1 - (embedding <=> :embedding::vector) as similarity
+                           1 - (embedding <=> CAST(:embedding AS vector)) as similarity
                     FROM messages
                     WHERE conversation_id = :conv_id
                       AND tenant_id = :tenant_id
                       AND embedding IS NOT NULL
-                    ORDER BY embedding <=> :embedding::vector
+                    ORDER BY embedding <=> CAST(:embedding AS vector)
                     LIMIT :top_k
                 """),
                 {
