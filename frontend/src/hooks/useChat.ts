@@ -9,7 +9,7 @@ export interface ChatState {
   error: string | null
 }
 
-export function useChat(tenantId: string, userId: string) {
+export function useChat(tenantId: string, userId: string, token: string | null = null) {
   const [state, setState] = useState<ChatState>({
     messages: [],
     conversationId: null,
@@ -180,4 +180,6 @@ export function useChat(tenantId: string, userId: string) {
   }, [])
 
   return { state, sendMessage, loadConversation, newConversation }
+}
+{ state, sendMessage, loadConversation, newConversation }
 }

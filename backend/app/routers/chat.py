@@ -15,6 +15,7 @@ from app.models.db import Tenant, User, Conversation
 from app.memory.manager import memory_manager
 from app.memory.compressor import count_tokens
 from app.config import settings
+from app.auth import get_current_tenant, get_current_user
 
 # LangChain ChatOpenAI via OpenRouter
 chat_llm = ChatOpenAI(

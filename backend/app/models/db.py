@@ -1,10 +1,10 @@
 import uuid
+import enum
 from datetime import datetime
-from sqlalchemy import Column, String, Text, DateTime, Integer, ForeignKey, Enum as SAEnum
+from sqlalchemy import Column, String, Text, DateTime, Integer, ForeignKey, Boolean, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, relationship
 from pgvector.sqlalchemy import Vector
-import enum
 
 
 class Base(DeclarativeBase):
@@ -21,6 +21,7 @@ class Tenant(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False)
     api_key_hash = Column(String(255), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")
@@ -31,6 +32,7 @@ class User(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     username = Column(String(255), nullable=False)
+    hashed_password = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     tenant = relationship("Tenant", back_populates="users")

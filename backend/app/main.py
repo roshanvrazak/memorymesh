@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import init_db
-from app.routers import chat, conversations
+from app.routers import chat, conversations, auth
 
 
 @asynccontextmanager
@@ -25,9 +25,10 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Memory-Debug", "X-Conversation-ID"],
+    expose_headers=["X-Memory-Debug", "X-Conversation-ID", "Authorization"],
 )
 
+app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(conversations.router, prefix="/api", tags=["conversations"])
 

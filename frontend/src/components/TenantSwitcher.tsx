@@ -1,16 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { createTenant, createUser, TenantInfo, UserInfo } from '../api/client'
+import { createTenant, createUser, login, TenantInfo, UserInfo } from '../api/client'
 
 interface Props {
   currentTenant: TenantInfo | null
   currentUser: UserInfo | null
-  onSwitch: (tenant: TenantInfo, user: UserInfo) => void
+  onSwitch: (tenant: TenantInfo, user: UserInfo, token: string | null) => void
 }
 
 export function TenantSwitcher({ currentTenant, currentUser, onSwitch }: Props) {
   const [open, setOpen] = useState(false)
+  const [isLogin, setIsLogin] = useState(false)
   const [name, setName] = useState('')
+  const [tenantId, setTenantId] = useState('')
   const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -27,19 +30,43 @@ export function TenantSwitcher({ currentTenant, currentUser, onSwitch }: Props) 
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  const handleCreate = async () => {
-    if (!name.trim() || !username.trim()) return
+  const handleAction = async () => {
+    if (isLogin) {
+      if (!tenantId.trim() || !username.trim() || !password.trim()) return
+    } else {
+      if (!name.trim() || !username.trim() || !password.trim()) return
+    }
+    
     setLoading(true)
     setError('')
     try {
-      const tenant = await createTenant(name.trim())
-      const user = await createUser(tenant.id, username.trim())
-      onSwitch(tenant, user)
+      let t: TenantInfo
+      let u: UserInfo
+      let tok: string
+
+      if (isLogin) {
+        const res = await login(tenantId.trim(), username.trim(), password.trim())
+        tok = res.access_token
+        // In a real app, we might fetch user/tenant details here
+        t = { id: tenantId.trim(), name: 'Workspace' }
+        u = { id: '', tenant_id: tenantId.trim(), username: username.trim() }
+      } else {
+        const tenant = await createTenant(name.trim())
+        const user = await createUser(tenant.id, username.trim(), password.trim())
+        const res = await login(tenant.id, username.trim(), password.trim())
+        t = tenant
+        u = user
+        tok = res.access_token
+      }
+      
+      onSwitch(t, u, tok)
       setOpen(false)
       setName('')
+      setTenantId('')
       setUsername('')
+      setPassword('')
     } catch (e: any) {
-      setError(e.message || 'Failed to create workspace')
+      setError(e.response?.data?.detail || e.message || 'Authentication failed')
     } finally {
       setLoading(false)
     }
@@ -65,18 +92,6 @@ export function TenantSwitcher({ currentTenant, currentUser, onSwitch }: Props) 
           gap: '7px',
           transition: 'all 0.2s',
           fontFamily: 'inherit',
-        }}
-        onMouseOver={e => {
-          if (!open) {
-            e.currentTarget.style.background = 'var(--bg-tertiary)'
-            e.currentTarget.style.borderColor = 'var(--border)'
-          }
-        }}
-        onMouseOut={e => {
-          if (!open) {
-            e.currentTarget.style.background = isConnected ? 'rgba(0,229,255,0.06)' : 'transparent'
-            e.currentTarget.style.borderColor = isConnected ? 'rgba(0,229,255,0.2)' : 'var(--border-glass)'
-          }
         }}
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
@@ -111,7 +126,6 @@ export function TenantSwitcher({ currentTenant, currentUser, onSwitch }: Props) 
           border: '1px solid var(--border-glass)',
           boxShadow: 'var(--shadow-xl)',
         }}>
-          {/* Active workspace */}
           {currentTenant && currentUser && (
             <div style={{
               background: 'rgba(0,229,255,0.05)',
@@ -140,39 +154,63 @@ export function TenantSwitcher({ currentTenant, currentUser, onSwitch }: Props) 
                     @{currentUser.username}
                   </div>
                 </div>
-                <div style={{
-                  width: '30px', height: '30px', borderRadius: '8px',
-                  background: 'linear-gradient(135deg, var(--accent), var(--accent-purple))',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '13px', fontWeight: 700, color: '#000',
-                }}>
-                  {currentTenant.name[0]?.toUpperCase()}
-                </div>
               </div>
             </div>
           )}
 
-          {/* Create new */}
-          <div style={{
-            fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)',
-            marginBottom: '12px', letterSpacing: '0.3px',
-          }}>
-            {currentTenant ? 'Create new workspace' : 'Connect a workspace'}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+            <button
+              onClick={() => setIsLogin(false)}
+              style={{
+                flex: 1, padding: '6px', borderRadius: '8px', fontSize: '11px', fontWeight: 600,
+                background: !isLogin ? 'rgba(0,229,255,0.1)' : 'transparent',
+                color: !isLogin ? 'var(--accent)' : 'var(--text-muted)',
+                border: `1px solid ${!isLogin ? 'rgba(0,229,255,0.2)' : 'transparent'}`,
+                cursor: 'pointer'
+              }}
+            >
+              Provision
+            </button>
+            <button
+              onClick={() => setIsLogin(true)}
+              style={{
+                flex: 1, padding: '6px', borderRadius: '8px', fontSize: '11px', fontWeight: 600,
+                background: isLogin ? 'rgba(0,229,255,0.1)' : 'transparent',
+                color: isLogin ? 'var(--accent)' : 'var(--text-muted)',
+                border: `1px solid ${isLogin ? 'rgba(0,229,255,0.2)' : 'transparent'}`,
+                cursor: 'pointer'
+              }}
+            >
+              Login
+            </button>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div>
-              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.4px', display: 'block', marginBottom: '5px' }}>
-                WORKSPACE NAME
-              </label>
-              <input
-                value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="e.g. Acme Corp"
-                className="input-field"
-                style={{ fontSize: '13px', padding: '9px 12px' }}
-              />
-            </div>
+            {!isLogin ? (
+              <div>
+                <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.4px', display: 'block', marginBottom: '5px' }}>
+                  WORKSPACE NAME
+                </label>
+                <input
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  placeholder="e.g. Acme Corp"
+                  className="input-field"
+                />
+              </div>
+            ) : (
+              <div>
+                <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.4px', display: 'block', marginBottom: '5px' }}>
+                  WORKSPACE ID
+                </label>
+                <input
+                  value={tenantId}
+                  onChange={e => setTenantId(e.target.value)}
+                  placeholder="UUID"
+                  className="input-field"
+                />
+              </div>
+            )}
             <div>
               <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.4px', display: 'block', marginBottom: '5px' }}>
                 USERNAME
@@ -182,8 +220,19 @@ export function TenantSwitcher({ currentTenant, currentUser, onSwitch }: Props) 
                 onChange={e => setUsername(e.target.value)}
                 placeholder="e.g. john_doe"
                 className="input-field"
-                style={{ fontSize: '13px', padding: '9px 12px' }}
-                onKeyDown={e => e.key === 'Enter' && handleCreate()}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.4px', display: 'block', marginBottom: '5px' }}>
+                PASSWORD
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="input-field"
+                onKeyDown={e => e.key === 'Enter' && handleAction()}
               />
             </div>
           </div>
@@ -193,45 +242,19 @@ export function TenantSwitcher({ currentTenant, currentUser, onSwitch }: Props) 
               color: 'var(--accent-red)', fontSize: '12px', marginTop: '10px',
               padding: '8px 10px', background: 'rgba(239,68,68,0.06)',
               border: '1px solid rgba(239,68,68,0.15)', borderRadius: 'var(--r-md)',
-              display: 'flex', gap: '6px', alignItems: 'center',
             }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
-                <path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
               {error}
             </div>
           )}
 
           <button
-            onClick={handleCreate}
-            disabled={loading || !name.trim() || !username.trim()}
+            onClick={handleAction}
+            disabled={loading || (isLogin ? (!tenantId || !username || !password) : (!name || !username || !password))}
             className="btn-primary"
-            style={{
-              marginTop: '14px',
-              width: '100%',
-              padding: '11px',
-              fontSize: '13px',
-              letterSpacing: '0.2px',
-            }}
+            style={{ marginTop: '14px', width: '100%', padding: '11px' }}
           >
-            {loading ? (
-              <span style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 1s linear infinite' }}>
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" opacity="0.3"/>
-                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
-                </svg>
-                Provisioning...
-              </span>
-            ) : 'Create & Connect'}
+            {loading ? 'Processing...' : (isLogin ? 'Login' : 'Create & Connect')}
           </button>
-
-          <div style={{
-            fontSize: '10px', color: 'var(--text-muted)', marginTop: '12px',
-            lineHeight: 1.6, textAlign: 'center',
-          }}>
-            Each workspace is fully isolated with dedicated tenant data in PostgreSQL.
-          </div>
         </div>
       )}
     </div>

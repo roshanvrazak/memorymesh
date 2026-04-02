@@ -1,7 +1,11 @@
 import uuid
+import secrets
+import json
+from typing import List
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
+
 from app.database import get_db
 from app.models.db import Conversation, Message, Tenant, User
 from app.schemas.chat import (
@@ -15,8 +19,7 @@ from app.schemas.chat import (
 )
 from app.memory.manager import memory_manager
 from app.memory.redis_layer import RedisMemoryLayer
-from typing import List
-import json
+from app.auth import get_current_tenant, get_current_user, get_password_hash
 
 router = APIRouter()
 redis_layer = RedisMemoryLayer()
@@ -25,16 +28,13 @@ redis_layer = RedisMemoryLayer()
 @router.get("/conversations", response_model=List[ConversationListItem])
 async def list_conversations(
     db: AsyncSession = Depends(get_db),
-    x_tenant_id: str = Header(...),
-    x_user_id: str = Header(...),
+    tenant: Tenant = Depends(get_current_tenant),
+    user: User = Depends(get_current_user),
 ):
-    tenant_id = uuid.UUID(x_tenant_id)
-    user_id = uuid.UUID(x_user_id)
-
     result = await db.execute(
         select(Conversation)
-        .where(Conversation.tenant_id == tenant_id)
-        .where(Conversation.user_id == user_id)
+        .where(Conversation.tenant_id == tenant.id)
+        .where(Conversation.user_id == user.id)
         .order_by(Conversation.updated_at.desc())
     )
     return result.scalars().all()
@@ -44,15 +44,14 @@ async def list_conversations(
 async def get_conversation(
     conversation_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    x_tenant_id: str = Header(...),
-    x_user_id: str = Header(...),
+    tenant: Tenant = Depends(get_current_tenant),
+    user: User = Depends(get_current_user),
 ):
-    tenant_id = uuid.UUID(x_tenant_id)
-
     result = await db.execute(
         select(Conversation)
         .where(Conversation.id == conversation_id)
-        .where(Conversation.tenant_id == tenant_id)
+        .where(Conversation.tenant_id == tenant.id)
+        .where(Conversation.user_id == user.id)
     )
     conv = result.scalar_one_or_none()
     if not conv:
@@ -62,7 +61,7 @@ async def get_conversation(
     msg_result = await db.execute(
         select(Message)
         .where(Message.conversation_id == conversation_id)
-        .where(Message.tenant_id == tenant_id)
+        .where(Message.tenant_id == tenant.id)
         .order_by(Message.created_at.asc())
     )
     conv.messages = msg_result.scalars().all()
@@ -73,22 +72,21 @@ async def get_conversation(
 async def delete_conversation(
     conversation_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    x_tenant_id: str = Header(...),
-    x_user_id: str = Header(...),
+    tenant: Tenant = Depends(get_current_tenant),
+    user: User = Depends(get_current_user),
 ):
-    tenant_id = uuid.UUID(x_tenant_id)
-
     result = await db.execute(
         select(Conversation)
         .where(Conversation.id == conversation_id)
-        .where(Conversation.tenant_id == tenant_id)
+        .where(Conversation.tenant_id == tenant.id)
+        .where(Conversation.user_id == user.id)
     )
     conv = result.scalar_one_or_none()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     # Clear Redis cache
-    await redis_layer.delete_session(str(tenant_id), str(conversation_id))
+    await redis_layer.delete_session(str(tenant.id), str(conversation_id))
 
     # Delete from DB (cascade deletes messages)
     await db.execute(delete(Conversation).where(Conversation.id == conversation_id))
@@ -102,13 +100,11 @@ async def delete_conversation(
 async def memory_debug(
     conversation_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    x_tenant_id: str = Header(...),
-    x_user_id: str = Header(...),
+    tenant: Tenant = Depends(get_current_tenant),
+    user: User = Depends(get_current_user),
 ):
-    tenant_id = uuid.UUID(x_tenant_id)
-
     # Check Redis
-    redis_messages = await redis_layer.get_messages(str(tenant_id), str(conversation_id))
+    redis_messages = await redis_layer.get_messages(str(tenant.id), str(conversation_id))
     redis_hit = redis_messages is not None
     redis_count = len(redis_messages) if redis_messages else 0
 
@@ -116,7 +112,8 @@ async def memory_debug(
     result = await db.execute(
         select(Conversation)
         .where(Conversation.id == conversation_id)
-        .where(Conversation.tenant_id == tenant_id)
+        .where(Conversation.tenant_id == tenant.id)
+        .where(Conversation.user_id == user.id)
     )
     conv = result.scalar_one_or_none()
     summary = conv.summary if conv else None
@@ -136,13 +133,17 @@ async def create_tenant(
     body: TenantCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    from app.models.db import Tenant
+    api_key = secrets.token_urlsafe(32)
+    api_key_hash = get_password_hash(api_key)
 
-    tenant = Tenant(name=body.name)
+    tenant = Tenant(name=body.name, api_key_hash=api_key_hash)
     db.add(tenant)
     await db.commit()
     await db.refresh(tenant)
-    return tenant
+
+    response = TenantResponse.model_validate(tenant)
+    response.api_key = api_key  # Return plain API key only once
+    return response
 
 
 @router.post("/tenants/{tenant_id}/users", response_model=UserResponse)
@@ -156,7 +157,8 @@ async def create_user(
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    user = User(tenant_id=tenant_id, username=body.username)
+    hashed_password = get_password_hash(body.password)
+    user = User(tenant_id=tenant_id, username=body.username, hashed_password=hashed_password)
     db.add(user)
     await db.commit()
     await db.refresh(user)

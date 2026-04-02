@@ -49,11 +49,13 @@ class TenantCreate(BaseModel):
 
 class UserCreate(BaseModel):
     username: str
+    password: str
 
 
 class TenantResponse(BaseModel):
     id: uuid.UUID
     name: str
+    api_key: Optional[str] = None
     created_at: datetime
 
     class Config:

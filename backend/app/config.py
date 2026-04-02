@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     TOKEN_COMPRESSION_THRESHOLD: int = 4000
     SEMANTIC_TOP_K: int = 5
 
+    # Security settings
+    JWT_SECRET_KEY: str = "changeme_in_production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRATION_MINUTES: int = 60 * 24 * 7  # 1 week
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: Union[str, list]) -> list:

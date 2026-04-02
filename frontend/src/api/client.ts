@@ -42,7 +42,14 @@ const api = axios.create({
 
 export function setTenantHeaders(tenantId: string, userId: string) {
   api.defaults.headers.common['X-Tenant-ID'] = tenantId
-  api.defaults.headers.common['X-User-ID'] = userId
+}
+
+export function setAuthToken(token: string | null) {
+  if (token) {
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`
+  } else {
+    delete api.defaults.headers.common['Authorization']
+  }
 }
 
 export async function createTenant(name: string): Promise<TenantInfo> {
@@ -71,6 +78,18 @@ export async function deleteConversation(id: string): Promise<void> {
 
 export async function getMemoryDebug(conversationId: string): Promise<MemoryDebug> {
   const res = await api.get(`/conversations/${conversationId}/memory-debug`)
+  return res.data
+}
+
+export async function login(tenantId: string, username: string, password: string): Promise<{ access_token: string, token_type: string }> {
+  const params = new URLSearchParams()
+  params.append('username', `${tenantId}:${username}`)
+  params.append('password', password)
+  const res = await api.post('/token', params, {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    }
+  })
   return res.data
 }
 

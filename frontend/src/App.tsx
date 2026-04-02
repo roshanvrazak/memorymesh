@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { ChatWindow } from './components/ChatWindow'
 import { TenantSwitcher } from './components/TenantSwitcher'
-import { TenantInfo, UserInfo, Message, setTenantHeaders } from './api/client'
+import { TenantInfo, UserInfo, Message, setTenantHeaders, setAuthToken } from './api/client'
 import { useChat } from './hooks/useChat'
 
 export default function App() {
@@ -179,6 +179,14 @@ export default function App() {
           memoryDebug={state.memoryDebug}
           onSend={handleSend}
           error={state.error}
+          tenantId={tenantId}
+          userId={userId}
+        />
+      </div>
+    </div>
+  )
+}
+ error={state.error}
           tenantId={tenantId}
           userId={userId}
         />
