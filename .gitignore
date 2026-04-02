@@ -74,6 +74,8 @@ docker-compose.override.yml
 
 # Project Specific
 MEMORYMESH_CONTEXT.md
+dev_plan.md
+.worktrees/
 .claude/
 
 .env
