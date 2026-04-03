@@ -94,6 +94,58 @@ async def delete_conversation(
     return {"status": "deleted"}
 
 
+@router.post("/conversations/{conversation_id}/messages/{message_id}/pin")
+async def toggle_pin_message(
+    conversation_id: uuid.UUID,
+    message_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    tenant: Tenant = Depends(get_current_tenant),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Message)
+        .where(Message.id == message_id)
+        .where(Message.conversation_id == conversation_id)
+        .where(Message.tenant_id == tenant.id)
+    )
+    msg = result.scalar_one_or_none()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    msg.is_pinned = not msg.is_pinned
+    await db.commit()
+    await db.refresh(msg)
+    return {"id": str(msg.id), "is_pinned": msg.is_pinned}
+
+
+@router.delete("/conversations/{conversation_id}/messages/{message_id}")
+async def delete_message(
+    conversation_id: uuid.UUID,
+    message_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    tenant: Tenant = Depends(get_current_tenant),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Message)
+        .where(Message.id == message_id)
+        .where(Message.conversation_id == conversation_id)
+        .where(Message.tenant_id == tenant.id)
+    )
+    msg = result.scalar_one_or_none()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    # Delete from DB
+    await db.delete(msg)
+    await db.commit()
+
+    # Clear from Redis cache (simplest is to clear the whole session cache)
+    await redis_layer.delete_session(str(tenant.id), str(conversation_id))
+
+    return {"status": "deleted"}
+
+
 @router.get(
     "/conversations/{conversation_id}/memory-debug", response_model=MemoryDebugResponse
 )

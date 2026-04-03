@@ -67,6 +67,7 @@ class Message(Base):
     content = Column(Text, nullable=False)
     embedding = Column(Vector(1536), nullable=True)
     token_count = Column(Integer, nullable=True)
+    is_pinned = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     conversation = relationship("Conversation", back_populates="messages")

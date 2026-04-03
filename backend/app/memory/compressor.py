@@ -43,11 +43,12 @@ class MemoryCompressor:
 
         pg = PGMemoryLayer()
 
-        # Get all messages
+        # Get all non-pinned messages
         result = await db.execute(
             select(Message)
             .where(Message.conversation_id == conversation_id)
             .where(Message.tenant_id == tenant_id)
+            .where(Message.is_pinned == False)
             .order_by(Message.created_at.asc())
         )
         all_messages = result.scalars().all()
@@ -62,14 +63,28 @@ class MemoryCompressor:
         conv_text = "\n".join([f"{m.role}: {m.content}" for m in to_compress])
         compressed_tokens = sum(m.token_count or count_tokens(m.content) for m in to_compress)
 
-        # Call Claude Haiku via LangChain ChatAnthropic
+        # Call Claude via OpenRouter
+        existing_summary = ""
+        conv_result = await db.execute(
+            select(Conversation).where(Conversation.id == conversation_id)
+        )
+        conv = conv_result.scalar_one_or_none()
+        if conv and conv.summary:
+            existing_summary = conv.summary
+
+        system_msg = (
+            "You are a memory compressor. Summarise the following new messages "
+            "and merge them with the EXISTING summary provided. The goal is to "
+            "maintain a single, coherent, and concise summary of the entire "
+            "conversation history. Focus on preserving key decisions, facts, "
+            "and user preferences."
+        )
+        
+        prompt = f"EXISTING SUMMARY: {existing_summary}\n\nNEW MESSAGES:\n{conv_text}\n\nProvide updated summary:"
+
         result = await compression_llm.ainvoke([
-            SystemMessage(content=(
-                "You are a memory compressor. Summarise the following conversation into a "
-                "concise, factual summary that preserves all important context, decisions, "
-                "and information. Be thorough but concise."
-            )),
-            HumanMessage(content=f"Summarise this conversation:\n\n{conv_text}"),
+            SystemMessage(content=system_msg),
+            HumanMessage(content=prompt),
         ])
 
         summary = result.content
