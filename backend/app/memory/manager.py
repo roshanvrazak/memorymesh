@@ -7,9 +7,31 @@ from app.memory.pg_layer import PGMemoryLayer
 from app.memory.compressor import MemoryCompressor
 from app.models.db import Conversation, Message
 from app.config import settings
-from prometheus_client import Counter
+from prometheus_client import Counter, REGISTRY
 
-memory_hits = Counter(
+# Use a global registry check to avoid errors in reload/test envs
+_counters = {}
+
+def get_counter(name, documentation, labelnames):
+    if name not in _counters:
+        # Check if it already exists in the global registry
+        from prometheus_client import REGISTRY
+        for metric in REGISTRY._collector_to_names.values():
+            if name in metric:
+                # This is tricky because prometheus_client doesn't expose a clean "get by name"
+                # If we are here, it's already registered. Let's just use a try-except
+                pass
+        
+        try:
+            _counters[name] = Counter(name, documentation, labelnames)
+        except ValueError:
+            # Already exists, we can't easily get the object back without a custom registry
+            # For testing/E2E, we can just create a dummy if it fails
+            _counters[name] = Counter(name + "_retry", documentation, labelnames)
+            
+    return _counters[name]
+
+memory_hits = get_counter(
     "memory_layer_hits_total",
     "Number of hits per memory layer",
     ["layer"]
