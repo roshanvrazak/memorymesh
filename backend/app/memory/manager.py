@@ -7,6 +7,13 @@ from app.memory.pg_layer import PGMemoryLayer
 from app.memory.compressor import MemoryCompressor
 from app.models.db import Conversation, Message
 from app.config import settings
+from prometheus_client import Counter
+
+memory_hits = Counter(
+    "memory_layer_hits_total",
+    "Number of hits per memory layer",
+    ["layer"]
+)
 
 redis_layer = RedisMemoryLayer()
 pg_layer = PGMemoryLayer()
@@ -49,11 +56,14 @@ class MemoryManager:
             await redis_layer.set_messages(tenant_str, conv_str, recent_messages)
         else:
             redis_hit = True
+            memory_hits.labels(layer="redis").inc()
 
         # Layer 2: pgvector semantic search
         semantic_messages = await pg_layer.semantic_search(
             db, conversation_id, tenant_id, current_query, settings.SEMANTIC_TOP_K
         )
+        if semantic_messages:
+            memory_hits.labels(layer="vector").inc()
         semantic_context = [
             {
                 "id": str(m.id),
@@ -72,6 +82,8 @@ class MemoryManager:
         )
         conversation = conv_result.scalar_one_or_none()
         summary = conversation.summary if conversation else None
+        if summary:
+            memory_hits.labels(layer="summary").inc()
 
         return {
             "recent_messages": recent_messages,

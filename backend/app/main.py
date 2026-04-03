@@ -6,6 +6,7 @@ from app.database import init_db
 from app.routers import chat, conversations, auth
 from arq import create_pool
 from arq.connections import RedisSettings
+from prometheus_fastapi_instrumentator import Instrumentator
 
 
 @asynccontextmanager
@@ -37,6 +38,8 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(conversations.router, prefix="/api", tags=["conversations"])
+
+Instrumentator().instrument(app).expose(app)
 
 
 @app.get("/health")

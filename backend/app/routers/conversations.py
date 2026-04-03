@@ -16,6 +16,7 @@ from app.schemas.chat import (
     TenantResponse,
     UserResponse,
     MemoryDebugResponse,
+    TokenUsageResponse,
 )
 from app.memory.manager import memory_manager
 from app.memory.redis_layer import RedisMemoryLayer
@@ -178,6 +179,25 @@ async def memory_debug(
         summary_tokens=len(summary) // 4 if summary else None,
         total_context_messages=redis_count,
     )
+
+
+@router.get("/tenants/usage", response_model=TokenUsageResponse)
+async def get_tenant_usage(
+    db: AsyncSession = Depends(get_db),
+    tenant: Tenant = Depends(get_current_tenant),
+):
+    result = await db.execute(
+        select(
+            func.count(Message.id).label("count"),
+            func.sum(Message.token_count).label("total")
+        ).where(Message.tenant_id == tenant.id)
+    )
+    row = result.fetchone()
+    return {
+        "tenant_id": tenant.id,
+        "total_tokens": int(row.total or 0),
+        "message_count": int(row.count or 0),
+    }
 
 
 @router.post("/tenants", response_model=TenantResponse)

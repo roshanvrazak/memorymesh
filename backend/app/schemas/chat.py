@@ -79,3 +79,9 @@ class MemoryDebugResponse(BaseModel):
     summary_active: bool
     summary_tokens: Optional[int]
     total_context_messages: int
+
+
+class TokenUsageResponse(BaseModel):
+    tenant_id: uuid.UUID
+    total_tokens: int
+    message_count: int
