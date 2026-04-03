@@ -68,10 +68,9 @@ async def chat(
     request: ChatRequest,
     fastapi_request: Request,
     db: AsyncSession = Depends(get_db),
-    tenant: Tenant = Depends(get_current_tenant),
     user: User = Depends(get_current_user),
 ):
-    tenant_id = tenant.id
+    tenant_id = user.tenant_id
     user_id = user.id
 
     # Rate limiting

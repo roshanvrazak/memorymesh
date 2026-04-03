@@ -42,7 +42,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 async def get_current_tenant(
     x_tenant_id: str = Header(...),
     x_api_key: Optional[str] = Header(None),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    require_api_key: bool = True
 ) -> Tenant:
     try:
         tenant_uuid = uuid.UUID(x_tenant_id)
@@ -61,19 +62,36 @@ async def get_current_tenant(
             detail="Tenant not found or inactive"
         )
 
-    # Simple API Key verification if provided
-    if x_api_key:
-        if not tenant.api_key_hash or not verify_password(x_api_key, tenant.api_key_hash):
+    # If require_api_key is True, we MUST have a valid API key
+    if require_api_key:
+        if not x_api_key or not tenant.api_key_hash or not verify_password(x_api_key, tenant.api_key_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid API Key"
+                detail="Valid X-API-Key required"
             )
     
     return tenant
 
+async def get_admin_api_key(
+    x_admin_key: str = Header(...)
+) -> str:
+    if x_admin_key != settings.ADMIN_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid Admin API Key"
+        )
+    return x_admin_key
+
+async def get_tenant_no_key(
+    x_tenant_id: str = Header(...),
+    x_api_key: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db)
+) -> Tenant:
+    return await get_current_tenant(x_tenant_id, x_api_key, db, require_api_key=False)
+
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    tenant: Tenant = Depends(get_current_tenant),
+    tenant: Tenant = Depends(get_tenant_no_key),
     db: AsyncSession = Depends(get_db)
 ) -> User:
     if not token:

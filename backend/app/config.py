@@ -23,9 +23,17 @@ class Settings(BaseSettings):
     SEMANTIC_TOP_K: int = 5
 
     # Security settings
+    ENVIRONMENT: str = "development"
     JWT_SECRET_KEY: str = "changeme_in_production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_MINUTES: int = 60 * 24 * 7  # 1 week
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.ENVIRONMENT == "production" and self.JWT_SECRET_KEY == "changeme_in_production":
+            raise ValueError("JWT_SECRET_KEY must be set in production environment")
+        if self.ENVIRONMENT == "production" and self.ADMIN_API_KEY == "changeme":
+            raise ValueError("ADMIN_API_KEY must be set in production environment")
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

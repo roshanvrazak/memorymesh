@@ -5,6 +5,11 @@ from sqlalchemy import select
 from app.database import get_db
 from app.models.db import User, Tenant
 from app.auth import verify_password, create_access_token, get_current_user, get_current_tenant
+from app.rate_limiter import RateLimiter
+from app.memory.redis_layer import RedisMemoryLayer
+
+redis_layer = RedisMemoryLayer()
+rate_limiter = RateLimiter(redis_layer.client)
 from pydantic import BaseModel
 import uuid
 
@@ -41,6 +46,9 @@ async def login_for_access_token(
             detail="Invalid Tenant ID in username",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Rate limit login attempts
+    await rate_limiter.check_rate_limit(f"login:{tenant_id_str}", limit=5, window=60)
 
     result = await db.execute(
         select(User).where(User.username == username).where(User.tenant_id == tenant_id)

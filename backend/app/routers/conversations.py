@@ -4,7 +4,7 @@ import json
 from typing import List
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 
 from app.database import get_db
 from app.models.db import Conversation, Message, Tenant, User
@@ -20,21 +20,22 @@ from app.schemas.chat import (
 )
 from app.memory.manager import memory_manager
 from app.memory.redis_layer import RedisMemoryLayer
-from app.auth import get_current_tenant, get_current_user, get_password_hash
+from app.auth import get_current_tenant, get_current_user, get_password_hash, get_admin_api_key
+from app.rate_limiter import RateLimiter
 
 router = APIRouter()
 redis_layer = RedisMemoryLayer()
+rate_limiter = RateLimiter(redis_layer.client)
 
 
 @router.get("/conversations", response_model=List[ConversationListItem])
 async def list_conversations(
     db: AsyncSession = Depends(get_db),
-    tenant: Tenant = Depends(get_current_tenant),
     user: User = Depends(get_current_user),
 ):
     result = await db.execute(
         select(Conversation)
-        .where(Conversation.tenant_id == tenant.id)
+        .where(Conversation.tenant_id == user.tenant_id)
         .where(Conversation.user_id == user.id)
         .order_by(Conversation.updated_at.desc())
     )
@@ -45,13 +46,12 @@ async def list_conversations(
 async def get_conversation(
     conversation_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    tenant: Tenant = Depends(get_current_tenant),
     user: User = Depends(get_current_user),
 ):
     result = await db.execute(
         select(Conversation)
         .where(Conversation.id == conversation_id)
-        .where(Conversation.tenant_id == tenant.id)
+        .where(Conversation.tenant_id == user.tenant_id)
         .where(Conversation.user_id == user.id)
     )
     conv = result.scalar_one_or_none()
@@ -62,7 +62,7 @@ async def get_conversation(
     msg_result = await db.execute(
         select(Message)
         .where(Message.conversation_id == conversation_id)
-        .where(Message.tenant_id == tenant.id)
+        .where(Message.tenant_id == user.tenant_id)
         .order_by(Message.created_at.asc())
     )
     conv.messages = msg_result.scalars().all()
@@ -73,13 +73,12 @@ async def get_conversation(
 async def delete_conversation(
     conversation_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    tenant: Tenant = Depends(get_current_tenant),
     user: User = Depends(get_current_user),
 ):
     result = await db.execute(
         select(Conversation)
         .where(Conversation.id == conversation_id)
-        .where(Conversation.tenant_id == tenant.id)
+        .where(Conversation.tenant_id == user.tenant_id)
         .where(Conversation.user_id == user.id)
     )
     conv = result.scalar_one_or_none()
@@ -87,7 +86,7 @@ async def delete_conversation(
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     # Clear Redis cache
-    await redis_layer.delete_session(str(tenant.id), str(conversation_id))
+    await redis_layer.delete_session(str(user.tenant_id), str(conversation_id))
 
     # Delete from DB (cascade deletes messages)
     await db.execute(delete(Conversation).where(Conversation.id == conversation_id))
@@ -100,14 +99,13 @@ async def toggle_pin_message(
     conversation_id: uuid.UUID,
     message_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    tenant: Tenant = Depends(get_current_tenant),
     user: User = Depends(get_current_user),
 ):
     result = await db.execute(
         select(Message)
         .where(Message.id == message_id)
         .where(Message.conversation_id == conversation_id)
-        .where(Message.tenant_id == tenant.id)
+        .where(Message.tenant_id == user.tenant_id)
     )
     msg = result.scalar_one_or_none()
     if not msg:
@@ -124,14 +122,13 @@ async def delete_message(
     conversation_id: uuid.UUID,
     message_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    tenant: Tenant = Depends(get_current_tenant),
     user: User = Depends(get_current_user),
 ):
     result = await db.execute(
         select(Message)
         .where(Message.id == message_id)
         .where(Message.conversation_id == conversation_id)
-        .where(Message.tenant_id == tenant.id)
+        .where(Message.tenant_id == user.tenant_id)
     )
     msg = result.scalar_one_or_none()
     if not msg:
@@ -142,7 +139,7 @@ async def delete_message(
     await db.commit()
 
     # Clear from Redis cache (simplest is to clear the whole session cache)
-    await redis_layer.delete_session(str(tenant.id), str(conversation_id))
+    await redis_layer.delete_session(str(user.tenant_id), str(conversation_id))
 
     return {"status": "deleted"}
 
@@ -153,11 +150,10 @@ async def delete_message(
 async def memory_debug(
     conversation_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    tenant: Tenant = Depends(get_current_tenant),
     user: User = Depends(get_current_user),
 ):
     # Check Redis
-    redis_messages = await redis_layer.get_messages(str(tenant.id), str(conversation_id))
+    redis_messages = await redis_layer.get_messages(str(user.tenant_id), str(conversation_id))
     redis_hit = redis_messages is not None
     redis_count = len(redis_messages) if redis_messages else 0
 
@@ -165,7 +161,7 @@ async def memory_debug(
     result = await db.execute(
         select(Conversation)
         .where(Conversation.id == conversation_id)
-        .where(Conversation.tenant_id == tenant.id)
+        .where(Conversation.tenant_id == user.tenant_id)
         .where(Conversation.user_id == user.id)
     )
     conv = result.scalar_one_or_none()
@@ -184,17 +180,17 @@ async def memory_debug(
 @router.get("/tenants/usage", response_model=TokenUsageResponse)
 async def get_tenant_usage(
     db: AsyncSession = Depends(get_db),
-    tenant: Tenant = Depends(get_current_tenant),
+    user: User = Depends(get_current_user),
 ):
     result = await db.execute(
         select(
             func.count(Message.id).label("count"),
             func.sum(Message.token_count).label("total")
-        ).where(Message.tenant_id == tenant.id)
+        ).where(Message.tenant_id == user.tenant_id)
     )
     row = result.fetchone()
     return {
-        "tenant_id": tenant.id,
+        "tenant_id": user.tenant_id,
         "total_tokens": int(row.total or 0),
         "message_count": int(row.count or 0),
     }
@@ -204,7 +200,11 @@ async def get_tenant_usage(
 async def create_tenant(
     body: TenantCreate,
     db: AsyncSession = Depends(get_db),
+    admin_key: str = Depends(get_admin_api_key),
 ):
+    # Rate limit provisioning
+    await rate_limiter.check_rate_limit("provisioning:tenants", limit=10, window=3600) # 10 per hour
+
     api_key = secrets.token_urlsafe(32)
     api_key_hash = get_password_hash(api_key)
 
@@ -223,6 +223,7 @@ async def create_user(
     tenant_id: uuid.UUID,
     body: UserCreate,
     db: AsyncSession = Depends(get_db),
+    admin_key: str = Depends(get_admin_api_key),
 ):
     result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
     tenant = result.scalar_one_or_none()
