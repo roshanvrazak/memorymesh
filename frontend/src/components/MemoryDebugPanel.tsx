@@ -10,6 +10,8 @@ export function MemoryDebugPanel({ debug }: Props) {
 
   if (!debug) return null
 
+  const totalTokens = (debug.redis_messages * 150) + (debug.semantic_messages * 200) + (debug.summary_tokens || 0)
+  
   const layers = [
     {
       active: debug.redis_hit,
@@ -21,8 +23,9 @@ export function MemoryDebugPanel({ debug }: Props) {
       ),
       label: 'Redis',
       detail: debug.redis_hit
-        ? `Redis hit - ${debug.redis_messages} recent messages`
-        : `${debug.redis_messages} messages - loaded from DB`,
+        ? `Hot Cache: ${debug.redis_messages} msgs`
+        : `Warm Load: ${debug.redis_messages} msgs`,
+      tokens: debug.redis_messages * 150, // Approximation for UI
     },
     {
       active: debug.semantic_messages > 0,
@@ -35,8 +38,9 @@ export function MemoryDebugPanel({ debug }: Props) {
       ),
       label: 'pgvector',
       detail: debug.semantic_messages > 0
-        ? `pgvector - ${debug.semantic_messages} semantically relevant messages retrieved`
-        : 'no semantic matches',
+        ? `Recall: ${debug.semantic_messages} matches`
+        : 'no matches',
+      tokens: debug.semantic_messages * 200, // Approximation for UI
     },
     {
       active: debug.summary_active,
@@ -49,8 +53,9 @@ export function MemoryDebugPanel({ debug }: Props) {
       ),
       label: 'Summary',
       detail: debug.summary_active
-        ? `Summary active - ${debug.summary_tokens ?? 0} tokens compressed`
-        : 'no compression yet',
+        ? `Compressed: ${debug.summary_tokens ?? 0} tokens`
+        : 'inactive',
+      tokens: debug.summary_tokens || 0,
     },
   ]
 
@@ -64,6 +69,20 @@ export function MemoryDebugPanel({ debug }: Props) {
       transition: 'all 0.25s ease',
       flexShrink: 0,
     }}>
+      {/* Progress bar across the top */}
+      {!collapsed && (
+        <div style={{ height: '2px', display: 'flex', width: '100%' }}>
+          {layers.map(l => (
+            <div key={l.label} style={{
+              width: totalTokens > 0 ? `${(l.tokens / totalTokens) * 100}%` : '0%',
+              background: l.color,
+              opacity: l.active ? 0.8 : 0.1,
+              transition: 'width 0.5s ease',
+            }} />
+          ))}
+        </div>
+      )}
+
       {/* Header row */}
       <div
         onClick={() => setCollapsed(c => !c)}

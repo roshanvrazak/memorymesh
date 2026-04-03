@@ -5,7 +5,7 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 describe('useChat', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
-    global.fetch = vi.fn()
+    vi.stubGlobal('fetch', vi.fn())
   })
 
   it('initializes with empty state', () => {
@@ -35,7 +35,7 @@ describe('useChat', () => {
       }
     }
     
-    ;(global.fetch as any).mockResolvedValue(mockResponse)
+    ;(globalThis.fetch as any).mockResolvedValue(mockResponse)
 
     const { result } = renderHook(() => useChat('tenant-1', 'user-1'))
 

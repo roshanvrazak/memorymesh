@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { createTenant, createUser, login, TenantInfo, UserInfo, api } from '../api/client'
+import api, { createTenant, createUser, login, TenantInfo, UserInfo } from '../api/client'
 
 interface Props {
   currentTenant: TenantInfo | null

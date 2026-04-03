@@ -5,6 +5,7 @@ export interface Message {
   role: 'user' | 'assistant'
   content: string
   token_count?: number
+  is_pinned?: boolean
   created_at: string
 }
 
@@ -58,7 +59,6 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       setAuthToken(null)
-      // We could also trigger a redirect or state reset here if we had access to a global store
     }
     return Promise.reject(error)
   }
@@ -69,8 +69,8 @@ export async function createTenant(name: string): Promise<TenantInfo> {
   return res.data
 }
 
-export async function createUser(tenantId: string, username: string): Promise<UserInfo> {
-  const res = await api.post(`/tenants/${tenantId}/users`, { username })
+export async function createUser(tenantId: string, username: string, password?: string): Promise<UserInfo> {
+  const res = await api.post(`/tenants/${tenantId}/users`, { username, password })
   return res.data
 }
 
@@ -103,6 +103,15 @@ export async function login(tenantId: string, username: string, password: string
     }
   })
   return res.data
+}
+
+export async function pinMessage(conversationId: string, messageId: string): Promise<{ id: string, is_pinned: boolean }> {
+  const res = await api.post(`/conversations/${conversationId}/messages/${messageId}/pin`)
+  return res.data
+}
+
+export async function deleteMessage(conversationId: string, messageId: string): Promise<void> {
+  await api.delete(`/conversations/${conversationId}/messages/${messageId}`)
 }
 
 export default api

@@ -1,59 +1,16 @@
 import React from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Message } from '../api/client'
 
 interface Props {
   message: Message
   isLatest?: boolean
+  onPin?: (id: string) => void
+  onDelete?: (id: string) => void
 }
 
-function renderContent(content: string) {
-  // Split by code blocks first
-  const parts = content.split(/(```[\s\S]*?```|`[^`]+`)/g)
-  return parts.map((part, i) => {
-    if (part.startsWith('```')) {
-      const lines = part.slice(3, -3).split('\n')
-      const lang = lines[0].trim()
-      const code = lines.slice(lang ? 1 : 0).join('\n').trim()
-      return (
-        <div key={i} style={{ margin: '10px 0' }}>
-          {lang && (
-            <div style={{
-              fontSize: '10px', fontWeight: 600, letterSpacing: '0.5px',
-              textTransform: 'uppercase', color: 'var(--accent)',
-              background: 'var(--bg-primary)', border: '1px solid var(--border)',
-              borderBottom: 'none', borderRadius: '6px 6px 0 0',
-              padding: '4px 12px', display: 'inline-block',
-            }}>
-              {lang}
-            </div>
-          )}
-          <pre style={{
-            margin: 0, borderRadius: lang ? '0 6px 6px 6px' : 'var(--r-md)',
-            fontSize: '12.5px',
-          }}>
-            <code>{code}</code>
-          </pre>
-        </div>
-      )
-    }
-    if (part.startsWith('`') && part.endsWith('`')) {
-      return <code key={i}>{part.slice(1, -1)}</code>
-    }
-    // Process **bold** and line breaks
-    return (
-      <span key={i}>
-        {part.split(/(\*\*[^*]+\*\*)/g).map((chunk, j) => {
-          if (chunk.startsWith('**') && chunk.endsWith('**')) {
-            return <strong key={j} style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{chunk.slice(2, -2)}</strong>
-          }
-          return chunk
-        })}
-      </span>
-    )
-  })
-}
-
-export function MessageBubble({ message, isLatest }: Props) {
+export function MessageBubble({ message, isLatest, onPin, onDelete }: Props) {
   const isUser = message.role === 'user'
   const time = new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
@@ -67,6 +24,7 @@ export function MessageBubble({ message, isLatest }: Props) {
         padding: '0 20px',
         alignItems: 'flex-start',
         gap: '10px',
+        position: 'relative',
       }}
     >
       {/* Assistant avatar */}
@@ -94,20 +52,39 @@ export function MessageBubble({ message, isLatest }: Props) {
           ? 'var(--user-bubble)'
           : 'rgba(15,15,15,0.6)',
         border: '1px solid',
-        borderColor: isUser ? 'var(--user-bubble-border)' : 'var(--border-glass)',
+        borderColor: message.is_pinned ? 'var(--accent)' : (isUser ? 'var(--user-bubble-border)' : 'var(--border-glass)'),
         borderRadius: isUser ? '14px 14px 4px 14px' : '4px 14px 14px 14px',
         padding: '12px 16px',
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',
-        boxShadow: isUser ? 'var(--shadow-sm)' : 'var(--shadow-md)',
+        boxShadow: message.is_pinned ? '0 0 10px rgba(0,229,255,0.2)' : (isUser ? 'var(--shadow-sm)' : 'var(--shadow-md)'),
+        position: 'relative',
       }}>
+        {/* Pin indicator */}
+        {message.is_pinned && (
+          <div style={{
+            position: 'absolute', top: '-8px', right: '10px',
+            background: 'var(--bg-primary)', padding: '2px 6px',
+            borderRadius: '4px', border: '1px solid var(--accent)',
+            fontSize: '8px', color: 'var(--accent)', fontWeight: 700,
+            display: 'flex', alignItems: 'center', gap: '3px'
+          }}>
+            <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
+            </svg>
+            PINNED
+          </div>
+        )}
+
         {/* Content */}
-        <div style={{
+        <div className="prose" style={{
           fontSize: '14px', lineHeight: '1.7', color: 'var(--text-primary)',
           whiteSpace: 'pre-wrap', wordBreak: 'break-word', letterSpacing: '0.1px',
         }}>
           {message.content ? (
-            renderContent(message.content)
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {message.content}
+            </ReactMarkdown>
           ) : (
             <span style={{ opacity: 0.4, display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span className="typing-dot">■</span>
@@ -116,9 +93,9 @@ export function MessageBubble({ message, isLatest }: Props) {
           )}
         </div>
 
-        {/* Meta footer */}
+        {/* Meta footer & Actions */}
         <div style={{
-          display: 'flex', gap: '8px', alignItems: 'center',
+          display: 'flex', gap: '12px', alignItems: 'center',
           justifyContent: isUser ? 'flex-end' : 'flex-start',
           marginTop: '8px',
         }}>
@@ -133,6 +110,39 @@ export function MessageBubble({ message, isLatest }: Props) {
               {message.token_count} tokens
             </span>
           ) : null}
+          
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: '6px', marginLeft: isUser ? '0' : '4px' }}>
+            <button
+              onClick={() => onPin?.(message.id)}
+              title={message.is_pinned ? 'Unpin message' : 'Pin message'}
+              style={{
+                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                color: message.is_pinned ? 'var(--accent)' : 'var(--text-hint)',
+                display: 'flex', alignItems: 'center', transition: 'color 0.2s',
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill={message.is_pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
+              </svg>
+            </button>
+            <button
+              onClick={() => onDelete?.(message.id)}
+              title="Delete message"
+              style={{
+                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                color: 'var(--text-hint)',
+                display: 'flex', alignItems: 'center', transition: 'color 0.2s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent-red)')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-hint)')}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              </svg>
+            </button>
+          </div>
+
           {isUser && (
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" style={{ color: 'var(--text-muted)' }}>
               <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>

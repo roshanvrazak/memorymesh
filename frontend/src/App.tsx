@@ -8,17 +8,20 @@ import { useChat } from './hooks/useChat'
 export default function App() {
   const [tenant, setTenant] = useState<TenantInfo | null>(null)
   const [user, setUser] = useState<UserInfo | null>(null)
+  const [token, setToken] = useState<string | null>(null)
   const [sidebarRefresh, setSidebarRefresh] = useState(0)
 
   const tenantId = tenant?.id || ''
   const userId = user?.id || ''
 
-  const { state, sendMessage, loadConversation, newConversation } = useChat(tenantId, userId)
+  const { state, sendMessage, loadConversation, newConversation, togglePin, deleteMessage } = useChat(tenantId, userId, token)
 
-  const handleTenantSwitch = (t: TenantInfo, u: UserInfo) => {
+  const handleTenantSwitch = (t: TenantInfo, u: UserInfo, tok: string | null = null) => {
     setTenant(t)
     setUser(u)
+    setToken(tok)
     setTenantHeaders(t.id, u.id)
+    setAuthToken(tok)
     newConversation()
     setSidebarRefresh(n => n + 1)
   }
@@ -31,7 +34,7 @@ export default function App() {
   const handleNew = () => newConversation()
 
   const handleSelectConversation = (conversationId: string, messages: Message[]) => {
-    loadConversation(conversationId, messages)
+    loadConversation(conversationId) // Simplified for now as useChat loadConversation is empty
   }
 
   const isConnected = Boolean(tenantId && userId)
@@ -178,17 +181,12 @@ export default function App() {
           isStreaming={state.isStreaming}
           memoryDebug={state.memoryDebug}
           onSend={handleSend}
+          onPin={togglePin}
+          onDelete={deleteMessage}
           error={state.error}
           tenantId={tenantId}
           userId={userId}
-        />
-      </div>
-    </div>
-  )
-}
- error={state.error}
-          tenantId={tenantId}
-          userId={userId}
+          token={token}
         />
       </div>
     </div>
