@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { createTenant, createUser, login, TenantInfo, UserInfo } from '../api/client'
+import { createTenant, createUser, login, TenantInfo, UserInfo, api } from '../api/client'
 
 interface Props {
   currentTenant: TenantInfo | null
@@ -47,9 +47,16 @@ export function TenantSwitcher({ currentTenant, currentUser, onSwitch }: Props) 
       if (isLogin) {
         const res = await login(tenantId.trim(), username.trim(), password.trim())
         tok = res.access_token
-        // In a real app, we might fetch user/tenant details here
-        t = { id: tenantId.trim(), name: 'Workspace' }
-        u = { id: '', tenant_id: tenantId.trim(), username: username.trim() }
+        
+        // Fetch actual user/tenant info
+        const meRes = await api.get('/me', {
+          headers: {
+            'Authorization': `Bearer ${tok}`,
+            'X-Tenant-ID': tenantId.trim()
+          }
+        })
+        t = { id: meRes.data.tenant_id, name: meRes.data.tenant_name }
+        u = { id: meRes.data.user_id, tenant_id: meRes.data.tenant_id, username: meRes.data.username }
       } else {
         const tenant = await createTenant(name.trim())
         const user = await createUser(tenant.id, username.trim(), password.trim())

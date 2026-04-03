@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models.db import User, Tenant
-from app.auth import verify_password, create_access_token
+from app.auth import verify_password, create_access_token, get_current_user, get_current_tenant
 from pydantic import BaseModel
 import uuid
 
@@ -56,3 +56,22 @@ async def login_for_access_token(
 
     access_token = create_access_token(data={"sub": str(user.id), "tenant_id": str(tenant_id)})
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+class MeResponse(BaseModel):
+    user_id: uuid.UUID
+    username: str
+    tenant_id: uuid.UUID
+    tenant_name: str
+
+@router.get("/me", response_model=MeResponse)
+async def get_me(
+    user: User = Depends(get_current_user),
+    tenant: Tenant = Depends(get_current_tenant),
+):
+    return {
+        "user_id": user.id,
+        "username": user.username,
+        "tenant_id": tenant.id,
+        "tenant_name": tenant.name,
+    }

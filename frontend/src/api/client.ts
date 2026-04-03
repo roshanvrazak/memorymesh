@@ -52,6 +52,18 @@ export function setAuthToken(token: string | null) {
   }
 }
 
+// Handle token expiration
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      setAuthToken(null)
+      // We could also trigger a redirect or state reset here if we had access to a global store
+    }
+    return Promise.reject(error)
+  }
+)
+
 export async function createTenant(name: string): Promise<TenantInfo> {
   const res = await api.post('/tenants', { name })
   return res.data

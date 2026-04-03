@@ -62,27 +62,11 @@ def _build_lc_history(history: list) -> list[BaseMessage]:
 async def chat(
     request: ChatRequest,
     db: AsyncSession = Depends(get_db),
-    x_tenant_id: str = Header(...),
-    x_user_id: str = Header(...),
+    tenant: Tenant = Depends(get_current_tenant),
+    user: User = Depends(get_current_user),
 ):
-    try:
-        tenant_id = uuid.UUID(x_tenant_id)
-        user_id = uuid.UUID(x_user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid headers")
-
-    # Validate tenant and user
-    tenant_result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
-    tenant = tenant_result.scalar_one_or_none()
-    if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant not found")
-
-    user_result = await db.execute(
-        select(User).where(User.id == user_id).where(User.tenant_id == tenant_id)
-    )
-    user = user_result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    tenant_id = tenant.id
+    user_id = user.id
 
     # Get or create conversation
     conversation = await memory_manager.get_or_create_conversation(
