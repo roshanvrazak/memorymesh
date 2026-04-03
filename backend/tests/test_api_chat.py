@@ -6,11 +6,12 @@ from app.main import app
 from app.auth import create_access_token
 from app.models.db import Tenant, User, Conversation
 from unittest.mock import AsyncMock, patch
-import uuid
-import pytest
 
 @pytest.mark.asyncio
-async def test_chat_sse_unauthorized(db_session):
+async def test_chat_sse_unauthorized(db_session, mocker):
+    # Mock rate limiter to avoid Redis connection error
+    mocker.patch("app.routers.chat.rate_limiter.check_rate_limit", new_callable=AsyncMock)
+    
     # Setup a tenant so we don't get 404 from get_current_tenant
     tenant_id = uuid.uuid4()
     tenant = Tenant(id=tenant_id, name="Test Tenant")
@@ -32,6 +33,9 @@ async def test_chat_sse_unauthorized(db_session):
 
 @pytest.mark.asyncio
 async def test_chat_sse_success(db_session, mocker):
+    # Mock rate limiter
+    mocker.patch("app.routers.chat.rate_limiter.check_rate_limit", new_callable=AsyncMock)
+    
     # Mock LLM and MemoryManager
     # Instead of patching the instance, we patch the 'astream' method on the class 
     # OR we patch where it is used. Patching the instance attribute fails due to Pydantic.

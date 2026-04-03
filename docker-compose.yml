@@ -73,6 +73,22 @@ services:
       retries: 3
       start_period: 5s
 
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: memorymesh-worker
+    command: arq app.worker.WorkerSettings
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:

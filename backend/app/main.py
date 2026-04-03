@@ -4,12 +4,18 @@ from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import init_db
 from app.routers import chat, conversations, auth
+from arq import create_pool
+from arq.connections import RedisSettings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    app.state.arq_pool = await create_pool(
+        RedisSettings(host=settings.REDIS_HOST, port=settings.REDIS_PORT)
+    )
     yield
+    await app.state.arq_pool.close()
 
 
 app = FastAPI(

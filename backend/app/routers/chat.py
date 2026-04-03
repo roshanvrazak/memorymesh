@@ -1,7 +1,7 @@
 import uuid
 import json
 from typing import AsyncIterator
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -16,6 +16,11 @@ from app.memory.manager import memory_manager
 from app.memory.compressor import count_tokens
 from app.config import settings
 from app.auth import get_current_tenant, get_current_user
+from app.rate_limiter import RateLimiter
+from app.memory.redis_layer import RedisMemoryLayer
+
+redis_layer = RedisMemoryLayer()
+rate_limiter = RateLimiter(redis_layer.client)
 
 # LangChain ChatOpenAI via OpenRouter
 chat_llm = ChatOpenAI(
@@ -61,12 +66,16 @@ def _build_lc_history(history: list) -> list[BaseMessage]:
 @router.post("/chat")
 async def chat(
     request: ChatRequest,
+    fastapi_request: Request,
     db: AsyncSession = Depends(get_db),
     tenant: Tenant = Depends(get_current_tenant),
     user: User = Depends(get_current_user),
 ):
     tenant_id = tenant.id
     user_id = user.id
+
+    # Rate limiting
+    await rate_limiter.check_rate_limit(str(tenant_id))
 
     # Get or create conversation
     conversation = await memory_manager.get_or_create_conversation(
@@ -119,31 +128,9 @@ async def chat(
 
             # Auto-generate title for new conversations
             if not request.conversation_id and conversation.title == "New Conversation":
-                import asyncio
-
-                async def generate_and_update_title(conv_id, first_message):
-                    try:
-                        title_prompt = (
-                            f"Write a very short, concise title (max 4-5 words) summarizing "
-                            f"this message. Do not use quotes or punctuation: {first_message}"
-                        )
-                        result = await title_llm.ainvoke([HumanMessage(content=title_prompt)])
-                        new_title = result.content.strip(' ".\n')
-
-                        from app.database import AsyncSessionLocal
-                        async with AsyncSessionLocal() as bg_db:
-                            from sqlalchemy import update
-                            await bg_db.execute(
-                                update(Conversation)
-                                .where(Conversation.id == conv_id)
-                                .values(title=new_title)
-                            )
-                            await bg_db.commit()
-                    except Exception as e:
-                        import logging
-                        logging.error(f"Failed to auto-generate title: {e}")
-
-                asyncio.create_task(generate_and_update_title(conversation.id, request.message))
+                await fastapi_request.app.state.arq_pool.enqueue_job(
+                    "generate_and_update_title", str(conversation.id), request.message
+                )
 
             user_tokens = count_tokens(request.message)
             assistant_tokens = count_tokens(full_response)
